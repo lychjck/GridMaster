@@ -23,4 +23,9 @@ export const getAvailableDates = async () => {
     return response.data.data;
 };
 
+export const runSimulation = async (config) => {
+    const response = await api.post('/simulate', config);
+    return response.data;
+};
+
 export default api;

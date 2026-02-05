@@ -12,6 +12,8 @@ import (
 )
 
 // Kline matches the schema in data/market.db
+var DB *gorm.DB
+
 type Kline struct {
 	Timestamp string  `gorm:"primaryKey" json:"timestamp"`
 	Open      float64 `json:"open"`
@@ -32,7 +34,8 @@ func main() {
 	absPath, _ := filepath.Abs(dbPath)
 	log.Printf("Connecting to DB at: %s", absPath)
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	var err error
+	DB, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		log.Fatal("failed to connect database:", err)
 	}
@@ -50,11 +53,14 @@ func main() {
 		c.Next()
 	})
 
+	// Register Simulation
+	RegisterSimulationRoutes(r)
+
 	r.GET("/api/dates", func(c *gin.Context) {
 		var dates []string
 		// Get distinct dates from both tables
 		// Union distinct
-		err := db.Raw(`
+		err := DB.Raw(`
 			SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_5m
 			UNION
 			SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_1m
@@ -74,8 +80,8 @@ func main() {
 		var klines5m, klines1m []Kline
 
 		// 1. Fetch data (filtered if date provided)
-		query5m := db.Table("klines_5m")
-		query1m := db.Table("klines_1m")
+		query5m := DB.Table("klines_5m")
+		query1m := DB.Table("klines_1m")
 
 		if dateParam != "" {
 			query5m = query5m.Where("timestamp LIKE ?", dateParam+"%")
@@ -126,7 +132,7 @@ func main() {
 		dateParam := c.Query("date")
 		var dailyKlines []Kline
 
-		query := db.Table("klines_daily").Order("timestamp asc")
+		query := DB.Table("klines_daily").Order("timestamp asc")
 		if dateParam != "" {
 			query = query.Where("timestamp LIKE ?", dateParam+"%")
 		}
