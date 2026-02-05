@@ -1,9 +1,26 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
 const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
     const chartRef = useRef(null);
+    const [selectedIndices, setSelectedIndices] = useState([]);
+
+    const onChartClick = (params) => {
+        // Only trigger on data points
+        if (params.dataIndex !== undefined) {
+            const index = params.dataIndex;
+            setSelectedIndices(prev => {
+                if (prev.length >= 2) return [index]; // Start new pair
+                if (prev.includes(index)) return prev.filter(i => i !== index); // Toggle off if clicked same
+                return [...prev, index];
+            });
+        }
+    };
+
+    const onEvents = {
+        'click': onChartClick
+    };
 
     const getOption = () => {
         if (!data || data.length === 0) return {};
@@ -260,7 +277,11 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     type: 'line',
                     data: prices,
                     smooth: true,
-                    showSymbol: false,
+                    showSymbol: true, // Show symbol when selected? Or just markPoint
+                    symbolSize: (val, params) => selectedIndices.includes(params.dataIndex) ? 10 : 0,
+                    itemStyle: {
+                        color: (params) => selectedIndices.includes(params.dataIndex) ? '#fbbf24' : '#38bdf8'
+                    },
                     lineStyle: {
                         color: '#38bdf8',
                         width: 2
@@ -277,6 +298,24 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                         data: gridChartLines,
                         animation: false,
                         silent: true
+                    },
+                    // Add markPoints for selection
+                    markPoint: {
+                        data: selectedIndices.map((idx, i) => ({
+                            name: `点${i + 1}`,
+                            coord: [idx, prices[idx]],
+                            value: prices[idx].toFixed(4),
+                            itemStyle: { color: i === 0 ? '#38bdf8' : '#fbbf24' },
+                            label: {
+                                show: true,
+                                position: 'top',
+                                formatter: `{b}: {c}`,
+                                fontSize: 10,
+                                backgroundColor: 'rgba(0,0,0,0.7)',
+                                padding: [2, 4],
+                                borderRadius: 2
+                            }
+                        }))
                     }
                 },
                 // Reference Lines as Real Series for perfect alignment
@@ -328,16 +367,78 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
         };
     };
 
+    // Calculate difference for overlay
+    let measurementInfo = null;
+    if (selectedIndices.length === 2) {
+        // We need to access prices here too, or just use data props?
+        // Let's re-calculate prices or pass it out. 
+        // Simpler: use the synthesized prices from getOption by extracting them or making them a helper.
+        // For now, just redo the mapping to be safe/quick.
+        const rawOpen = dailyInfo ? dailyInfo.open : (data[0] ? data[0].open : 0);
+        const dayOpen = parseFloat(rawOpen);
+        let chartPrices = data.map(item => item.close);
+        if (data.length > 0 && data[0].timestamp.split(' ')[1] === '09:31') {
+            chartPrices.unshift(dayOpen);
+        }
+
+        const p1 = chartPrices[selectedIndices[0]];
+        const p2 = chartPrices[selectedIndices[1]];
+        if (p1 !== undefined && p2 !== undefined) {
+            const diff = Math.abs(p1 - p2);
+            const minP = Math.min(p1, p2);
+            const diffPct = (diff / minP) * 100;
+            measurementInfo = {
+                diff: diff.toFixed(4),
+                pct: diffPct.toFixed(2),
+                p1: p1.toFixed(3),
+                p2: p2.toFixed(3)
+            };
+        }
+    }
+
     return (
-        <div className="w-full h-full min-h-[500px]">
+        <div className="w-full h-full min-h-[500px] relative">
             <ReactECharts
                 ref={chartRef}
                 option={getOption()}
                 style={{ height: '100%', width: '100%' }}
                 theme="dark"
+                onEvents={onEvents}
             />
+            {measurementInfo && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-indigo-900/80 backdrop-blur-md border border-indigo-500/50 px-4 py-2 rounded-lg shadow-xl animate-in fade-in zoom-in duration-200">
+                    <div className="flex items-center gap-4 text-sm font-medium">
+                        <div className="flex flex-col">
+                            <span className="text-indigo-300 text-[10px] uppercase tracking-wider">测距结果</span>
+                            <span className="text-white text-lg">
+                                {measurementInfo.diff} <span className="text-xs text-indigo-400 font-normal">({measurementInfo.pct}%)</span>
+                            </span>
+                        </div>
+                        <div className="h-8 w-px bg-indigo-500/30 mx-2" />
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+                            <span className="text-indigo-300">点1:</span> <span className="text-white font-mono">{measurementInfo.p1}</span>
+                            <span className="text-indigo-300">点2:</span> <span className="text-white font-mono">{measurementInfo.p2}</span>
+                        </div>
+                        <button
+                            onClick={() => setSelectedIndices([])}
+                            className="ml-4 p-1 hover:bg-white/10 rounded-full transition-colors"
+                            title="清除"
+                        >
+                            <svg className="w-4 h-4 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+            {!measurementInfo && selectedIndices.length === 1 && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-black/60 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-full text-[10px] text-white/80 animate-pulse">
+                    请点击图表上的第二个点以计算差值
+                </div>
+            )}
         </div>
     );
 };
 
 export default VolatilityChart;
+
