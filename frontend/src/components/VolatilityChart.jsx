@@ -7,13 +7,16 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
     const [selectedIndices, setSelectedIndices] = useState([]);
 
     const onChartClick = (params) => {
-        // Only trigger on data points
+        console.log("Chart clicked:", params.componentType, params.seriesName, "dataIndex:", params.dataIndex);
+        // Only trigger on data points or the line series
         if (params.dataIndex !== undefined) {
             const index = params.dataIndex;
             setSelectedIndices(prev => {
-                if (prev.length >= 2) return [index]; // Start new pair
-                if (prev.includes(index)) return prev.filter(i => i !== index); // Toggle off if clicked same
-                return [...prev, index];
+                const newIndices = prev.length >= 2 ? [index] :
+                    prev.includes(index) ? prev.filter(i => i !== index) :
+                        [...prev, index];
+                console.log("New selectedIndices:", newIndices);
+                return newIndices;
             });
         }
     };
@@ -277,11 +280,15 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     type: 'line',
                     data: prices,
                     smooth: true,
-                    showSymbol: true, // Show symbol when selected? Or just markPoint
-                    symbolSize: (val, params) => selectedIndices.includes(params.dataIndex) ? 10 : 0,
+                    showSymbol: true,
+                    symbol: 'circle',
+                    symbolSize: (val, params) => selectedIndices.includes(params.dataIndex) ? 12 : 6,
+                    triggerLineEvent: true, // Make the line area also clickable
                     itemStyle: {
-                        color: (params) => selectedIndices.includes(params.dataIndex) ? '#fbbf24' : '#38bdf8'
+                        color: (params) => selectedIndices.includes(params.dataIndex) ? '#fbbf24' : '#38bdf8',
+                        opacity: (params) => selectedIndices.includes(params.dataIndex) ? 1 : 0.4
                     },
+                    z: 10, // Ensure price line and points are on top of everything
                     lineStyle: {
                         color: '#38bdf8',
                         width: 2
