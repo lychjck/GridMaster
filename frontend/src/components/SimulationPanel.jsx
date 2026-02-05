@@ -1,21 +1,23 @@
 import React, { useState } from 'react';
 import { runSimulation } from '../lib/api';
 import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar } from 'lucide-react';
+import TradeChart from './TradeChart';
 
 const SimulationPanel = ({ availableDates, initialBasePrice }) => {
     const [config, setConfig] = useState({
         startDate: availableDates[0] || '2026-01-01',
         basePrice: initialBasePrice || 1.100,
-        gridStep: 1.0,
-        gridStepType: 'percent', // 'percent' | 'absolute'
-        amountPerGrid: 1000,
-        commissionRate: 0.0002, // 万2
-        minCommission: 5.0
+        gridStep: 0.005,
+        gridStepType: 'absolute', // 'percent' | 'absolute'
+        amountPerGrid: 2000,
+        commissionRate: 0.0001, // 万1
+        minCommission: 0.2,
+        usePenetration: false // New: default to false
     });
 
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades'
+    const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart'
 
     const handleSimulate = async () => {
         setLoading(true);
@@ -28,7 +30,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
                 commissionRate: parseFloat(config.commissionRate),
                 minCommission: parseFloat(config.minCommission)
             });
+            console.log("Simulation Result:", res);
             setResult(res);
+            // If we are in chart mode but no data, it's fine, but if we are in trades mode with 0 trades, show it.
         } catch (err) {
             console.error(err);
             alert("Simulation failed: " + err.message);
@@ -40,10 +44,10 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
     return (
         <div className="flex flex-col gap-6 h-full pb-12">
             {/* Control Bar */}
-            <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl">
+            <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl shrink-0">
                 <div className="flex items-center gap-2 text-indigo-400 font-semibold border-b border-white/5 pb-4 mb-6">
                     <Calculator className="w-5 h-5" />
-                    <span className="text-lg">回测参数配置</span>
+                    <span className="text-lg">网格交易策略回测</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-6">
@@ -127,7 +131,19 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
                         </div>
                     </div>
 
-                    <div className="flex items-end lg:col-span-2">
+                    <div className="flex flex-col gap-2">
+                        <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">成交模式</label>
+                        <select
+                            className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            value={config.usePenetration ? 'true' : 'false'}
+                            onChange={e => setConfig({ ...config, usePenetration: e.target.value === 'true' })}
+                        >
+                            <option value="false" className="bg-slate-900">纯数学模拟 (触价即成)</option>
+                            <option value="true" className="bg-slate-900">实盘穿透模拟 (破价方成)</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-end">
                         <button
                             onClick={handleSimulate}
                             disabled={loading}
@@ -142,14 +158,14 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
             {/* Results Area */}
             {result && (
                 <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <StatCard icon={<DollarSign />} label="总净收益" value={result.totalProfit.toFixed(2)} unit="CNY" color={result.totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"} />
-                        <StatCard icon={<RefreshCw />} label="总成交次数" value={result.totalTx} unit="笔" color="text-white" />
-                        <StatCard icon={<TrendingUp />} label="总佣金成本" value={result.totalComm.toFixed(2)} unit="CNY" color="text-amber-400" />
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0">
+                        <StatCard icon={<DollarSign />} label="总净收益" value={(result.totalProfit || 0).toFixed(2)} unit="CNY" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} />
+                        <StatCard icon={<RefreshCw />} label="总成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
+                        <StatCard icon={<TrendingUp />} label="总佣金成本" value={(result.totalComm || 0).toFixed(2)} unit="CNY" color="text-amber-400" />
                     </div>
 
-                    <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-0">
-                        <div className="px-6 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                    <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
+                        <div className="px-6 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
                             <div className="flex gap-4">
                                 <button
                                     onClick={() => setViewMode('daily')}
@@ -163,11 +179,17 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
                                 >
                                     <List className="w-4 h-4" /> 成交流水 ({result.trades?.length || 0})
                                 </button>
+                                <button
+                                    onClick={() => setViewMode('chart')}
+                                    className={`flex items-center gap-2 py-3 px-1 border-b-2 transition-all text-sm font-medium ${viewMode === 'chart' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <TrendingUp className="w-4 h-4" /> 交易图表
+                                </button>
                             </div>
                         </div>
 
-                        <div className="overflow-y-auto flex-1">
-                            {viewMode === 'daily' ? (
+                        <div className="flex-1 overflow-auto relative min-h-0">
+                            {viewMode === 'daily' && (
                                 <table className="w-full text-left text-sm text-slate-300">
                                     <thead className="bg-slate-900/50 sticky top-0 backdrop-blur-md z-10 text-xs uppercase tracking-wider font-semibold text-slate-500">
                                         <tr>
@@ -180,21 +202,30 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5 font-mono">
-                                        {result.dailyStats.map(stat => (
+                                        {result.dailyStats?.map(stat => (
                                             <tr key={stat.date} className="hover:bg-white/5 transition-colors">
                                                 <td className="px-6 py-4 text-slate-400">{stat.date}</td>
-                                                <td className="px-6 py-4 text-right text-slate-400">{stat.closePrice.toFixed(3)}</td>
+                                                <td className="px-6 py-4 text-right text-slate-400">{stat.closePrice?.toFixed(3)}</td>
                                                 <td className="px-6 py-4 text-right text-emerald-500 font-bold">{stat.buyCount || '-'}</td>
                                                 <td className="px-6 py-4 text-right text-rose-500 font-bold">{stat.sellCount || '-'}</td>
-                                                <td className="px-6 py-4 text-right text-amber-500/70">{stat.commission.toFixed(2)}</td>
+                                                <td className="px-6 py-4 text-right text-amber-500/70">{stat.commission?.toFixed(2)}</td>
                                                 <td className={`px-6 py-4 text-right font-bold ${stat.netProfit > 0 ? 'text-emerald-400' : stat.netProfit < 0 ? 'text-rose-400' : 'text-slate-600'}`}>
-                                                    {stat.netProfit !== 0 ? stat.netProfit.toFixed(2) : '-'}
+                                                    {stat.netProfit !== 0 ? stat.netProfit?.toFixed(2) : '-'}
                                                 </td>
                                             </tr>
                                         ))}
+                                        {(!result.dailyStats || result.dailyStats.length === 0) && (
+                                            <tr>
+                                                <td colSpan="6" className="px-6 py-12 text-center text-slate-500 italic">
+                                                    所选周期内无交易产生，请尝试调整基准价格或减小网格步长。
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
-                            ) : (
+                            )}
+
+                            {viewMode === 'trades' && (
                                 <table className="w-full text-left text-sm text-slate-300">
                                     <thead className="bg-slate-900/50 sticky top-0 backdrop-blur-md z-10 text-xs uppercase tracking-wider font-semibold text-slate-500">
                                         <tr>
@@ -214,14 +245,24 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
                                                         {trade.type === 'BUY' ? '买入' : '卖出'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-bold">{trade.price.toFixed(3)}</td>
+                                                <td className="px-6 py-4 text-right font-bold">{trade.price?.toFixed(3)}</td>
                                                 <td className="px-6 py-4 text-right text-slate-400">{trade.amount}</td>
-                                                <td className="px-6 py-4 text-right text-amber-500/70">{trade.comm.toFixed(2)}</td>
+                                                <td className="px-6 py-4 text-right text-amber-500/70">{trade.comm?.toFixed(2)}</td>
                                             </tr>
                                         ))}
-                                        {!result.trades?.length && <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-500">暂无成交流水</td></tr>}
+                                        {(!result.trades || result.trades.length === 0) && (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-12 text-center text-slate-500 italic">暂无成交流水</td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
+                            )}
+
+                            {viewMode === 'chart' && (
+                                <div className="p-4 h-full min-h-[460px]">
+                                    <TradeChart data={result.chartData} trades={result.trades} />
+                                </div>
                             )}
                         </div>
                     </div>

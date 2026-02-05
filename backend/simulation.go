@@ -16,6 +16,7 @@ type SimConfig struct {
 	CommissionRate float64 `json:"commissionRate"` // e.g. 0.0002
 	MinCommission  float64 `json:"minCommission"`  // e.g. 0.2
 	AmountPerGrid  float64 `json:"amountPerGrid"`  // Default 100 shares
+	UsePenetration bool    `json:"usePenetration"` // New: Strict penetration mode
 }
 
 type DailyStat struct {
@@ -42,6 +43,7 @@ type SimResult struct {
 	TotalComm   float64     `json:"totalComm"`
 	DailyStats  []DailyStat `json:"dailyStats"`
 	Trades      []Trade     `json:"trades"`
+	ChartData   []Kline     `json:"chartData"`
 }
 
 func RegisterSimulationRoutes(r *gin.Engine) {
@@ -166,7 +168,15 @@ func runSimulation(c *gin.Context) {
 				nextBuyPrice = config.BasePrice * (1 + float64(nextBuyIndex)*stepValue)
 			}
 
-			if k.Low <= nextBuyPrice {
+			// Trigger Check
+			triggered := false
+			if config.UsePenetration {
+				triggered = k.Low < nextBuyPrice // Price MUST break it
+			} else {
+				triggered = k.Low <= nextBuyPrice // Price only needs to touch it
+			}
+
+			if triggered {
 				// Trigger Buy
 				// Cost
 				cost := nextBuyPrice * config.AmountPerGrid
@@ -208,7 +218,15 @@ func runSimulation(c *gin.Context) {
 				buyPrice = config.BasePrice * (1 + float64(nextSellIndex-1)*stepValue)
 			}
 
-			if k.High >= nextSellPrice {
+			// Trigger Check
+			triggered := false
+			if config.UsePenetration {
+				triggered = k.High > nextSellPrice // Price MUST break it
+			} else {
+				triggered = k.High >= nextSellPrice // Price only needs to touch it
+			}
+
+			if triggered {
 				// Trigger Sell
 				// Revenue
 				revenue := nextSellPrice * config.AmountPerGrid
@@ -256,6 +274,7 @@ func runSimulation(c *gin.Context) {
 		return sortedStats[i].Date < sortedStats[j].Date
 	})
 	result.DailyStats = sortedStats
+	result.ChartData = klines // Return the data used for sim
 
 	c.JSON(http.StatusOK, result)
 }
