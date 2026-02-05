@@ -46,23 +46,21 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
 
         if (data.length > 0) {
             const firstTime = data[0].timestamp.split(' ')[1]; // HH:MM
-            if (firstTime === '09:31') {
+            // Synthesize 09:30 if the data starts later (e.g. 09:31 for 1m, 09:35 for 5m)
+            if (firstTime > '09:30' && firstTime <= '10:00') { // Only for morning start
                 const datePart = data[0].timestamp.split(' ')[0];
                 const startTime = `${datePart} 09:30`;
 
-                // Prepend 09:30 point
                 chartDates.unshift(startTime);
-                chartPrices.unshift(dayOpen); // Use Open price for 09:30 anchor
-                // Volume for 09:30 is 0 or synthetic. ECharts bar chart will shift.
-                // We need to re-map volumes index since we added a point at index 0.
+                chartPrices.unshift(dayOpen);
 
-                // Re-calculate volumes with offset
                 chartVolumes = [
-                    [0, 0, 1], // 09:30 dummy volume
+                    [0, 0, 1],
                     ...data.map((item, index) => [index + 1, item.volume, item.open > item.close ? 1 : -1])
                 ];
             }
-        } else if (dailyInfo) {
+        }
+        else if (dailyInfo) {
             // If no minute data but we have daily info (e.g. market just opened), 
             // we could potentially show a single point, but let's leave empty for now.
         }
@@ -384,8 +382,11 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
         const rawOpen = dailyInfo ? dailyInfo.open : (data[0] ? data[0].open : 0);
         const dayOpen = parseFloat(rawOpen);
         let chartPrices = data.map(item => item.close);
-        if (data.length > 0 && data[0].timestamp.split(' ')[1] === '09:31') {
-            chartPrices.unshift(dayOpen);
+        if (data.length > 0) {
+            const firstTime = data[0].timestamp.split(' ')[1];
+            if (firstTime > '09:30' && firstTime <= '10:00') {
+                chartPrices.unshift(dayOpen);
+            }
         }
 
         const p1 = chartPrices[selectedIndices[0]];
