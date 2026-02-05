@@ -67,61 +67,13 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
 
 
         if (gridStep && initialPrice) {
-            const step = parseFloat(gridStep) / 100;
             const base = parseFloat(initialPrice);
-            // Generate lines. Limit to reasonable range relative to current view?
-            // For now, just generate +/- 10 lines
-            // Collect Key Lines (Open, Close, Base) to check for overlap
-            const keyLines = [dayOpen, dayClose, base];
-
-            for (let i = -10; i <= 10; i++) {
-                if (i === 0) continue;
-                const price = base * (1 + i * step);
-
-                // Check if this grid line is too close to any key line (e.g. within 0.0005)
-                const isOverlapping = keyLines.some(keyPrice => Math.abs(keyPrice - price) < 0.0005);
-                if (isOverlapping) continue;
-
-                // Label Logic: i > 0 is Sell (Red/Green?), i < 0 is Buy.
-                // In Grid: Price drops -> Buy (Buy 1, Buy 2...). Price rises -> Sell.
-                let labelText = '';
-                let labelColor = '#888';
-
-                if (i > 0) {
-                    labelText = `卖${i} (↑${(i * step * 100).toFixed(1)}%)`;
-                    labelColor = '#ef4444';
-                } else {
-                    labelText = `买${Math.abs(i)} (↓${(Math.abs(i) * step * 100).toFixed(1)}%)`;
-                    labelColor = '#22c55e';
-                }
-
-                gridChartLines.push({
-                    yAxis: price,
-                    label: {
-                        formatter: labelText,
-                        position: 'end',
-                        color: labelColor,
-                        fontSize: 10,
-                        distance: [5, 0]
-                    },
-                    lineStyle: {
-                        color: 'rgba(255, 255, 255, 0.1)',
-                        type: 'dashed',
-                        width: 0.5
-                    }
-                });
-            }
-
-            // Add Base Line (Only if not too close to Open/Close?)
+            // Only add Base Line
             // Base Line is key, so we usually want to show it. 
-            // But if it equals Close (like today 1.174), they overlap.
-            // If they overlap, we prefer to keep both but maybe offset label? 
-            // Or if exact match, just let them merge (Base is translucent white, Close is Blue solid).
-            // Actually, if they overlap, the Blue line (drawn first?) might be covered by White line (drawn last).
-            // Let's modify Base line to be dashed or drawn BEFORE key lines if we want Key lines on top.
-            // Currently Base is pushed LAST, so it draws ON TOP of Close line.
-            // Result: Close (Blue) is covered by Base (White).
-            // Fix: Draw Base line FIRST or disable it if it overlaps exactly.
+            // Check overlap with Close line (now a series) - purely for visual overlap of the *Base Line* markLine.
+            // Since Close is a series, it's always drawn. Base is a markLine.
+            // If they overlap exactly, Base line (white) might cover Close line (blue) or vice versa depending on z-index.
+            // MarkLines usually float on top.
 
             const baseOverlapsClose = Math.abs(base - dayClose) < 0.0001;
 
