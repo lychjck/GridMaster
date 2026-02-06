@@ -12,6 +12,14 @@ const Dashboard = () => {
     const [availableDates, setAvailableDates] = useState([]);
     const [selectedDate, setSelectedDate] = useState('');
 
+    // Symbol State
+    const [selectedSymbol, setSelectedSymbol] = useState('512890');
+    const supportedSymbols = [
+        { code: '512890', name: '红利低波', market: 'SH' },
+        { code: '510300', name: '沪深300', market: 'SH' },
+        { code: '159915', name: '创业板指', market: 'SZ' }
+    ];
+
     const [gridStep, setGridStep] = useState(0.5);
     const [initialPrice, setInitialPrice] = useState('');
     const [stats, setStats] = useState({ volatility: 0, range: 0 });
@@ -19,7 +27,7 @@ const Dashboard = () => {
     // 1. Initial Load: Just get available dates
     const initData = async () => {
         try {
-            const dates = await getAvailableDates();
+            const dates = await getAvailableDates(selectedSymbol);
             setAvailableDates(dates);
 
             // Auto Select Latest Date
@@ -34,17 +42,17 @@ const Dashboard = () => {
 
     useEffect(() => {
         initData();
-    }, []);
+    }, [selectedSymbol]); // Re-fetch dates when symbol changes
 
     // 2. Fetch Detailed Klines & Daily Info when Date Selected
     const fetchData = async () => {
         if (!selectedDate) return;
         setLoading(true);
         try {
-            console.log("Fetching data for:", selectedDate);
+            console.log("Fetching data for:", selectedSymbol, selectedDate);
             const [klines, dailies] = await Promise.all([
-                getKlines(selectedDate),
-                getDailyKlines(selectedDate)
+                getKlines(selectedDate, selectedSymbol),
+                getDailyKlines(selectedDate, selectedSymbol)
             ]);
 
             setData(klines);
@@ -66,7 +74,7 @@ const Dashboard = () => {
         fetchData();
         const interval = setInterval(fetchData, 60000);
         return () => clearInterval(interval);
-    }, [selectedDate]);
+    }, [selectedDate, selectedSymbol]); // Fetch on Symbol or Date change
 
     const calculateStats = (klines) => {
         if (!klines || klines.length === 0) return;
@@ -86,6 +94,8 @@ const Dashboard = () => {
 
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
 
+    const currentSymbolName = supportedSymbols.find(s => s.code === selectedSymbol)?.name || selectedSymbol;
+
     return (
         <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
             {/* Header */}
@@ -96,8 +106,22 @@ const Dashboard = () => {
                             <TrendingUp className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold tracking-tight">红利低波网格分析</h1>
-                            <p className="text-xs text-slate-400 font-medium tracking-wide">512890 华泰柏瑞红利低波ETF</p>
+                            <h1 className="text-xl font-bold tracking-tight">网格交易分析</h1>
+                            <div className="flex items-center gap-2 mt-1">
+                                <select
+                                    value={selectedSymbol}
+                                    onChange={(e) => {
+                                        setSelectedSymbol(e.target.value);
+                                        setSelectedDate(''); // Reset date on symbol switch
+                                        setInitialPrice('');
+                                    }}
+                                    className="bg-black/30 border border-white/10 rounded px-2 py-0.5 text-xs text-indigo-300 font-mono focus:outline-none hover:bg-black/50 transition-colors"
+                                >
+                                    {supportedSymbols.map(s => (
+                                        <option key={s.code} value={s.code}>{s.code} {s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -106,8 +130,8 @@ const Dashboard = () => {
                         <button
                             onClick={() => setActiveTab('chart')}
                             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'chart'
-                                    ? 'bg-indigo-600 text-white shadow-md'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                ? 'bg-indigo-600 text-white shadow-md'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
                                 }`}
                         >
                             实时图表
@@ -115,8 +139,8 @@ const Dashboard = () => {
                         <button
                             onClick={() => setActiveTab('simulation')}
                             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'simulation'
-                                    ? 'bg-indigo-600 text-white shadow-md'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                ? 'bg-indigo-600 text-white shadow-md'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
                                 }`}
                         >
                             网格回测
@@ -244,7 +268,7 @@ const Dashboard = () => {
                     ) : (
                         // Simulation Tab Content - Full Screen
                         <div className="max-w-6xl mx-auto">
-                            <SimulationPanel availableDates={availableDates} initialBasePrice={initialPrice} />
+                            <SimulationPanel availableDates={availableDates} initialBasePrice={initialPrice} symbol={selectedSymbol} />
                         </div>
                     )}
                 </main>

@@ -3,7 +3,7 @@ import { runSimulation } from '../lib/api';
 import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar } from 'lucide-react';
 import TradeChart from './TradeChart';
 
-const SimulationPanel = ({ availableDates, initialBasePrice }) => {
+const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const [config, setConfig] = useState({
         startDate: availableDates[0] || '2026-01-01',
         basePrice: initialBasePrice || 1.100,
@@ -24,6 +24,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice }) => {
         try {
             const res = await runSimulation({
                 ...config,
+                symbol: symbol, // Pass symbol from props
                 basePrice: parseFloat(config.basePrice),
                 gridStep: parseFloat(config.gridStep),
                 amountPerGrid: parseFloat(config.amountPerGrid),

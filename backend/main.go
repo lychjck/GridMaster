@@ -15,6 +15,7 @@ import (
 var DB *gorm.DB
 
 type Kline struct {
+	Symbol    string  `gorm:"primaryKey" json:"symbol"`
 	Timestamp string  `gorm:"primaryKey" json:"timestamp"`
 	Open      float64 `json:"open"`
 	Close     float64 `json:"close"`
@@ -26,7 +27,6 @@ type Kline struct {
 	ChangePct float64 `json:"change_pct"`
 	ChangeAmt float64 `json:"change_amt"`
 	Turnover  float64 `json:"turnover"`
-	// Extra fields if needed, but JSON usually ignores if we don't map them or just keep standard
 }
 
 func main() {
@@ -57,17 +57,23 @@ func main() {
 	RegisterSimulationRoutes(r)
 
 	r.GET("/api/dates", func(c *gin.Context) {
+		symbol := c.Query("symbol")
 		var dates []string
-		// Get distinct dates from both tables
-		// Union distinct
-		err := DB.Raw(`
-			SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_5m
-			UNION
-			SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_1m
-			ORDER BY date ASC
-		`).Scan(&dates).Error
+		
+		query := `SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_daily`
+		var params []interface{}
+		
+		if symbol != "" {
+			query += ` WHERE symbol = ?`
+			params = append(params, symbol)
+		}
+		query += ` ORDER BY date ASC`
+
+		err := DB.Raw(query, params...).Scan(&dates).Error
 
 		if err != nil {
+			// Try fallback to unified view or other tables if daily is empty? 
+			// But daily should be populated.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -76,12 +82,16 @@ func main() {
 
 	r.GET("/api/klines", func(c *gin.Context) {
 		dateParam := c.Query("date") // Optional date filter
+		symbol := c.Query("symbol")
+		if symbol == "" {
+			symbol = "512890" // Default
+		}
 
 		var klines5m, klines1m []Kline
 
 		// 1. Fetch data (filtered if date provided)
-		query5m := DB.Table("klines_5m")
-		query1m := DB.Table("klines_1m")
+		query5m := DB.Table("klines_5m").Where("symbol = ?", symbol)
+		query1m := DB.Table("klines_1m").Where("symbol = ?", symbol)
 
 		if dateParam != "" {
 			query5m = query5m.Where("timestamp LIKE ?", dateParam+"%")
@@ -130,9 +140,14 @@ func main() {
 
 	r.GET("/api/klines/daily", func(c *gin.Context) {
 		dateParam := c.Query("date")
+		symbol := c.Query("symbol")
+		if symbol == "" {
+			symbol = "512890"
+		}
+		
 		var dailyKlines []Kline
 
-		query := DB.Table("klines_daily").Order("timestamp asc")
+		query := DB.Table("klines_daily").Where("symbol = ?", symbol).Order("timestamp asc")
 		if dateParam != "" {
 			query = query.Where("timestamp LIKE ?", dateParam+"%")
 		}

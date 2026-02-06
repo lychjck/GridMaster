@@ -9,6 +9,7 @@ import (
 )
 
 type SimConfig struct {
+	Symbol         string  `json:"symbol"` // New: Stock Symbol
 	StartDate      string  `json:"startDate"`
 	BasePrice      float64 `json:"basePrice"`
 	GridStep       float64 `json:"gridStep"`       // e.g. 1.0 for 1% OR 0.05 for Price
@@ -58,6 +59,9 @@ func runSimulation(c *gin.Context) {
 	}
 
 	// Default values
+	if config.Symbol == "" {
+		config.Symbol = "512890"
+	}
 	if config.GridStep <= 0 {
 		config.GridStep = 1.0
 	}
@@ -70,7 +74,7 @@ func runSimulation(c *gin.Context) {
 	// Check if we have 1m data covering the requested StartDate
 	var first1m Kline
 	has1m := false
-	if err := DB.Table("klines_1m").Order("timestamp asc").First(&first1m).Error; err == nil {
+	if err := DB.Table("klines_1m").Where("symbol = ?", config.Symbol).Order("timestamp asc").First(&first1m).Error; err == nil {
 		if first1m.Timestamp <= config.StartDate {
 			has1m = true
 		}
@@ -84,7 +88,7 @@ func runSimulation(c *gin.Context) {
 		usedTable = "klines_5m"
 	}
 
-	if err := DB.Table(usedTable).Where("timestamp >= ?", config.StartDate).Order("timestamp asc").Find(&klines).Error; err != nil {
+	if err := DB.Table(usedTable).Where("symbol = ?", config.Symbol).Where("timestamp >= ?", config.StartDate).Order("timestamp asc").Find(&klines).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

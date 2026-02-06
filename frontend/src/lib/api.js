@@ -6,20 +6,37 @@ const api = axios.create({
 });
 
 // dateStr optional: "YYYY-MM-DD"
-export const getKlines = async (dateStr = '') => {
-    const url = dateStr ? `/klines?date=${dateStr}` : '/klines';
+// symbol optional: "512890"
+export const getKlines = async (dateStr = '', symbol = '') => {
+    let url = '/klines';
+    const params = [];
+    if (dateStr) params.push(`date=${dateStr}`);
+    if (symbol) params.push(`symbol=${symbol}`);
+
+    if (params.length > 0) {
+        url += '?' + params.join('&');
+    }
+
     const response = await api.get(url);
     return response.data.data;
 };
 
-export const getDailyKlines = async (dateStr = '') => {
-    const url = dateStr ? `/klines/daily?date=${dateStr}` : '/klines/daily';
+export const getDailyKlines = async (dateStr = '', symbol = '') => {
+    let url = '/klines/daily';
+    const params = [];
+    if (dateStr) params.push(`date=${dateStr}`);
+    if (symbol) params.push(`symbol=${symbol}`);
+
+    if (params.length > 0) {
+        url += '?' + params.join('&');
+    }
     const response = await api.get(url);
     return response.data.data;
 };
 
-export const getAvailableDates = async () => {
-    const response = await api.get('/dates');
+export const getAvailableDates = async (symbol = '') => {
+    const url = symbol ? `/dates?symbol=${symbol}` : '/dates';
+    const response = await api.get(url);
     return response.data.data;
 };
 

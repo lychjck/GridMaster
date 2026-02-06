@@ -1,11 +1,10 @@
 import requests
 import sqlite3
 import datetime
+import argparse
 from pathlib import Path
 
 # Configuration
-SYMBOL = "512890"  # 华泰柏瑞红利低波ETF
-MARKET = "1"       # 1 for SH
 DB_PATH = (Path(__file__).parent / "../data/market.db").resolve()
 URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 UT_TOKEN = "7eea3edcaed734bea9cbfc24409ed989"
@@ -15,12 +14,12 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Common schema for both tables
-    # f51(ts), f52(open), f53(close), f54(high), f55(low), f56(vol), f57(amt)
-    # f58(amplitude), f59(pct), f60(diff), f61(turnover), f62, f63, f64
+    # Common schema for both tables with Symbol support
+    # Primary Key is now (symbol, timestamp)
     create_sql = '''
         (
-            timestamp TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
             open REAL NOT NULL,
             close REAL NOT NULL,
             high REAL NOT NULL,
@@ -33,7 +32,8 @@ def init_db():
             turnover REAL,
             f62 REAL,
             f63 REAL,
-            f64 REAL
+            f64 REAL,
+            PRIMARY KEY (symbol, timestamp)
         )
     '''
     
@@ -53,12 +53,12 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print(f"Database initialized.")
+    print(f"Database initialized at {DB_PATH}.")
 
-def fetch_data(klt):
+def fetch_data(symbol, market, klt):
     # klt: "1" or "5" or "101" (daily)
     params = {
-        "secid": f"{MARKET}.{SYMBOL}",
+        "secid": f"{market}.{symbol}",
         "fields1": "f1,f2,f3,f4,f5,f6",
         # Request all fields f51 to f64
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64",
@@ -70,7 +70,7 @@ def fetch_data(klt):
     }
     
     try:
-        print(f"Fetching klt={klt} data from {URL}...")
+        print(f"Fetching klt={klt} data for {symbol} from {URL}...")
         res = requests.get(URL, params=params, timeout=10)
         data = res.json()
         
@@ -79,24 +79,21 @@ def fetch_data(klt):
             return []
             
         if not data["data"] or not data["data"]["klines"]:
-            print(f"No data received for klt={klt}.")
+            print(f"No data received for {symbol} (klt={klt}).")
             return []
             
         klines = data["data"]["klines"]
-        print(f"Received {len(klines)} records for klt={klt}.")
+        print(f"Received {len(klines)} records for {symbol} (klt={klt}).")
         
         records = []
         for k in klines:
             # "ts,open,close,high,low,vol,amt,amp,pct,diff,turn,f62,f63,f64"
-            # Daily data (klt=101) might have different fields structure or same?
-            # Usually daily is same but timestamp is "YYYY-MM-DD"
-            
-            # Safe parsing
             parts = k.split(",")
             if len(parts) < 6: 
                 continue
 
             r = {
+                "symbol": symbol,
                 "timestamp": parts[0],
                 "open": float(parts[1]),
                 "close": float(parts[2]),
@@ -124,32 +121,42 @@ def save_to_db(records, table_name):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    tuples = [(r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
+    tuples = [(r["symbol"], r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
                r["volume"], r["amount"], r["amplitude"], r["change_pct"], 
                r["change_amt"], r["turnover"], r["f62"], r["f63"], r["f64"]) for r in records]
     
     c.executemany(f'''
         INSERT OR REPLACE INTO {table_name} 
-        (timestamp, open, close, high, low, volume, amount, amplitude, change_pct, change_amt, turnover, f62, f63, f64)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (symbol, timestamp, open, close, high, low, volume, amount, amplitude, change_pct, change_amt, turnover, f62, f63, f64)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', tuples)
     conn.commit()
     conn.close()
     print(f"Saved {len(records)} records to {table_name}.")
 
 def main():
+    parser = argparse.ArgumentParser(description="Fetch Market Data")
+    parser.add_argument("--symbol", type=str, default="512890", help="Stock Symbol (e.g. 512890)")
+    parser.add_argument("--market", type=str, default="1", help="Market ID (1=SH/ETF, 0=SZ)")
+    args = parser.parse_args()
+
+    symbol = args.symbol
+    market = args.market
+
     init_db()
     
+    print(f"Processing {symbol} (Market: {market})...")
+
     # Fetch 5 min data
-    records_5m = fetch_data(5)
+    records_5m = fetch_data(symbol, market, 5)
     save_to_db(records_5m, "klines_5m")
     
     # Fetch 1 min data
-    records_1m = fetch_data(1)
+    records_1m = fetch_data(symbol, market, 1)
     save_to_db(records_1m, "klines_1m")
 
     # Fetch Daily data
-    records_day = fetch_data(101)
+    records_day = fetch_data(symbol, market, 101)
     save_to_db(records_day, "klines_daily")
 
 if __name__ == "__main__":
