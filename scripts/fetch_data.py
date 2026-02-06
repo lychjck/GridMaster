@@ -69,9 +69,16 @@ def fetch_data(symbol, market, klt):
         "end": "20500000"
     }
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://quote.eastmoney.com/",
+        "Accept": "*/*"
+    }
+    
     try:
-        print(f"Fetching klt={klt} data for {symbol} from {URL}...")
-        res = requests.get(URL, params=params, timeout=10)
+        print(f"Fetching klt={klt} data for {symbol} from {URL} (No Proxy)...")
+        # Explicitly disable proxies to avoid environment issues
+        res = requests.get(URL, params=params, headers=headers, timeout=10, proxies={"http": None, "https": None})
         data = res.json()
         
         if data["rc"] != 0:
