@@ -59,10 +59,18 @@ func main() {
 	r.GET("/api/dates", func(c *gin.Context) {
 		symbol := c.Query("symbol")
 		var dates []string
-		
-		query := `SELECT DISTINCT substr(timestamp, 1, 10) as date FROM klines_daily`
+
+		// 改为从分时线表中获取日期，确保有数据可画图
+		query := `
+			SELECT DISTINCT substr(timestamp, 1, 10) as date 
+			FROM (
+				SELECT timestamp, symbol FROM klines_1m
+				UNION
+				SELECT timestamp, symbol FROM klines_5m
+			)
+		`
 		var params []interface{}
-		
+
 		if symbol != "" {
 			query += ` WHERE symbol = ?`
 			params = append(params, symbol)
@@ -72,8 +80,6 @@ func main() {
 		err := DB.Raw(query, params...).Scan(&dates).Error
 
 		if err != nil {
-			// Try fallback to unified view or other tables if daily is empty? 
-			// But daily should be populated.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -144,7 +150,7 @@ func main() {
 		if symbol == "" {
 			symbol = "512890"
 		}
-		
+
 		var dailyKlines []Kline
 
 		query := DB.Table("klines_daily").Where("symbol = ?", symbol).Order("timestamp asc")
