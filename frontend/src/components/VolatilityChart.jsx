@@ -330,15 +330,14 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     data: prices.map(() => dayOpen),
                     showSymbol: false,
                     lineStyle: { color: '#fbbf24', width: 2, type: 'solid' },
-                    label: {
+                    label: { show: false }, // Tooltip handles it
+                    endLabel: {
                         show: true,
-                        position: 'start',
-                        formatter: '开盘: {c}',
+                        formatter: `开盘: ${dayOpen.toFixed(3)}`,
                         color: '#fbbf24',
-                        fontSize: 10,
-                        offset: [-10, -10]
+                        offset: [-10, -10], // Adjust to sit above/below
+                        fontSize: 11
                     },
-                    endLabel: { show: false },
                     z: 5
                 },
                 {
@@ -353,7 +352,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                         formatter: `收盘: ${dayClose.toFixed(3)}`,
                         color: '#38bdf8',
                         offset: [-10, 10],
-                        fontSize: 10
+                        fontSize: 11
                     },
                     z: 5
                 },
