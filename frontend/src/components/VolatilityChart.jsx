@@ -324,6 +324,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     }
                 },
                 // Reference Lines as Real Series for perfect alignment
+                // 根据开盘价和收盘价的差距动态调整标签偏移，避免重叠
                 {
                     name: '开盘价',
                     type: 'line',
@@ -335,7 +336,10 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                         show: true,
                         formatter: `开盘: ${dayOpen.toFixed(3)}`,
                         color: '#fbbf24',
-                        offset: [-10, -10], // Adjust to sit above/below
+                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        offset: [-10, dayOpen >= dayClose ? -14 : 14], // 开盘高时在上方，否则在下方
                         fontSize: 11
                     },
                     z: 5
@@ -351,7 +355,10 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                         show: true,
                         formatter: `收盘: ${dayClose.toFixed(3)}`,
                         color: '#38bdf8',
-                        offset: [-10, 10],
+                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        offset: [-10, dayClose > dayOpen ? -14 : 14], // 收盘高时在上方，否则在下方
                         fontSize: 11
                     },
                     z: 5
