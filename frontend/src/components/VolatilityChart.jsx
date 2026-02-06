@@ -329,26 +329,16 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     type: 'line',
                     data: prices.map(() => dayOpen),
                     showSymbol: false,
-                    lineStyle: { color: '#fbbf24', width: 2, type: 'solid', opacity: 0.8 },
-                    label: { show: false },
-                    endLabel: { show: false },
-                    markLine: {
-                        symbol: ['none', 'none'],
-                        data: [{
-                            yAxis: dayOpen,
-                            label: {
-                                show: true,
-                                position: 'start',
-                                formatter: '开盘: {c}',
-                                color: '#fbbf24',
-                                fontSize: 11,
-                                fontWeight: 'bold',
-                                offset: [10, -10]
-                            }
-                        }],
-                        lineStyle: { show: false }, // Use the series line
-                        silent: true
+                    lineStyle: { color: '#fbbf24', width: 2, type: 'solid' },
+                    label: {
+                        show: true,
+                        position: 'start',
+                        formatter: '开盘: {c}',
+                        color: '#fbbf24',
+                        fontSize: 10,
+                        offset: [-10, -10]
                     },
+                    endLabel: { show: false },
                     z: 5
                 },
                 {
@@ -356,16 +346,14 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, initialPrice }) => {
                     type: 'line',
                     data: prices.map(() => dayClose),
                     showSymbol: false,
-                    lineStyle: { color: '#38bdf8', width: 2, type: 'solid', opacity: 0.8 },
+                    lineStyle: { color: '#38bdf8', width: 2, type: 'solid' },
                     label: { show: false },
                     endLabel: {
                         show: true,
-                        position: 'end',
-                        formatter: '收盘: {c}',
+                        formatter: `收盘: ${dayClose.toFixed(3)}`,
                         color: '#38bdf8',
-                        fontSize: 11,
-                        fontWeight: 'bold',
-                        offset: [-10, 10]
+                        offset: [-10, 10],
+                        fontSize: 10
                     },
                     z: 5
                 },
