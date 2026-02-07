@@ -52,42 +52,107 @@ def init_db():
     conn.close()
     print(f"Database initialized at {DB_PATH}.")
 
-def fetch_data_mootdx(symbol, market, frequency, count=800):
+def get_latest_timestamp(symbol, table_name):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(f"SELECT MAX(timestamp) FROM {table_name} WHERE symbol=?", (symbol,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else "1970-01-01 00:00:00"
+    except Exception as e:
+        print(f"Warning: Could not get latest timestamp from {table_name}: {e}")
+        return "1970-01-01 00:00:00"
+
+def fetch_data_mootdx(symbol, market, frequency, count=800, since_ts="1970-01-01 00:00:00"):
     """
     frequency: 9=daily, 8=1m, 0=5m
     market: 1=SH, 0=SZ
+    since_ts: stop fetching if we encounter data older or equal to this timestamp
     """
     client = Quotes.factory(market='std')
     try:
         print(f"Fetching freq={frequency} records for {symbol} (Market: {market}) from TDX...")
+        print(f"  Smart Mode: Stop if timestamp <= {since_ts}")
         
         all_df = []
         chunk_size = 800
+        total_fetched = 0
+        
         for i in range(0, count, chunk_size):
             current_count = min(chunk_size, count - i)
-            print(f"  Requesting chunk {i//chunk_size + 1} (start={i}, count={current_count})...")
+            # print(f"  Requesting chunk {i//chunk_size + 1} (start={i}, count={current_count})...")
             df = client.bars(symbol=symbol, frequency=frequency, start=i, offset=current_count)
             
             if df is None or df.empty:
                 break
-            all_df.append(df)
-            if len(df) < current_count: # No more data
+            
+            # Sort to ensure we check time accurately (mootdx usually returns desc or asc depending on source, but index is datetime)
+            df = df.sort_index()
+            
+            # Data format check
+            # 日线使用 YYYY-MM-DD，分钟线使用 YYYY-MM-DD HH:MM
+            ts_format = '%Y-%m-%d' if frequency == 9 else '%Y-%m-%d %H:%M'
+            
+            # Smart Stitching Check
+            # df.index is DatetimeIndex
+            start_time = df.index[0].strftime(ts_format)
+            end_time = df.index[-1].strftime(ts_format)
+            
+            # print(f"    Chunk range: {start_time} -> {end_time}")
+            
+            # If the OLDEST record in this chunk (df.index[0]) is NEWER than since_ts, keep it all.
+            # If the OLDEST record is OLDER or EQUAL to since_ts, we found the overlap.
+            
+            # However, mootdx bars(offset=0) returns NEWEST data. 
+            # So start=0 is newest. start=800 is older.
+            # If we iterate i=0, 800... we are going BACKWARDS in time.
+            # So df.index[0] is the OLDEST in this chunk? 
+            # Wait, df.sort_index() makes it ASCENDING. 
+            # So df.index[0] is the OLDEST in this chunk.
+            # df.index[-1] is the NEWEST in this chunk.
+            
+            # We are going backwards in chunks.
+            # Chunk 1: [Today 09:30 ... Today 15:00] (Checking...)
+            # We want to keep records where ts > since_ts.
+            
+            # Filter matches
+            # Since index is Timestamp, we parse since_ts to Timestamp for comparison or compare strings (YYYY-MM-DD HH:MM sorts naturally)
+            # String comparison works for ISO-like formats.
+            
+            chunk_oldest_str = df.index[0].strftime(ts_format)
+            
+            if chunk_oldest_str <= since_ts:
+                print(f"  [Smart Stitching] Found overlap: Chunk oldest {chunk_oldest_str} <= DB latest {since_ts}.")
+                # Filter this chunk to only keep new data
+                df_filtered = df[df.index.map(lambda x: x.strftime(ts_format)) > since_ts]
+                
+                if not df_filtered.empty:
+                    all_df.append(df_filtered)
+                    total_fetched += len(df_filtered)
+                
+                print(f"  [Smart Stitching] Stopping fetch. (Saved {len(df_filtered)} from this boundary chunk)")
+                break
+            else:
+                # Whole chunk is new
+                all_df.append(df)
+                total_fetched += len(df)
+                print(f"  Saved chunk {i//chunk_size + 1} ({len(df)} rows). Oldest: {chunk_oldest_str}")
+
+            if len(df) < current_count: # No more data from server
                 break
         
         if not all_df:
-            print(f"No data received for {symbol} (freq={frequency}).")
+            print(f"No new data needed for {symbol}. (Database is up to date)")
             return []
             
         final_df = pd.concat(all_df).sort_index()
-        print(f"Total received {len(final_df)} records for {symbol} (freq={frequency}).")
+        print(f"Total new records to save: {len(final_df)}")
         
         records = []
-        # 日线使用 YYYY-MM-DD，分钟线使用 YYYY-MM-DD HH:MM
-        ts_format = '%Y-%m-%d' if frequency == 9 else '%Y-%m-%d %H:%M'
+        # ts_format defined above
         
         for index, row in final_df.iterrows():
-            # mootdx column mapping:
-            # datetime index, open, close, high, low, vol, amount
             r = {
                 "symbol": symbol,
                 "timestamp": index.strftime(ts_format),
@@ -133,10 +198,11 @@ def save_to_db(records, table_name):
     print(f"Saved {len(records)} records to {table_name}.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch Market Data via Mootdx (High-Depth)")
+    parser = argparse.ArgumentParser(description="Fetch Market Data via Mootdx (Smart Increment)")
     parser.add_argument("--symbols", type=str, default="512890,510300,510500", help="Comma separated symbols")
     parser.add_argument("--market", type=str, default="1", help="Default Market ID (1=SH, 0=SZ)")
-    parser.add_argument("--count", type=int, default=4000, help="Number of records to fetch (e.g. 25000 for 100 days)")
+    parser.add_argument("--count", type=int, default=40000, help="Max records for safety limit")
+    parser.add_argument("--force", action="store_true", help="Disable smart stitching and force fetch full count")
     args = parser.parse_args()
 
     symbols = args.symbols.split(",")
@@ -153,17 +219,23 @@ def main():
         print(f"Processing {symbol} (Market: {market}) via Mootdx backend...")
         print(f"{'='*50}")
 
-        # Fetch 1 min data (freq=8) - MOST CRITICAL
-        records_1m = fetch_data_mootdx(symbol, market, 8, count)
-        save_to_db(records_1m, "klines_1m")
+        # Fetch 1 min data (freq=8)
+        table_1m = "klines_1m"
+        latest_1m = "1970-01-01 00:00:00" if args.force else get_latest_timestamp(symbol, table_1m)
+        records_1m = fetch_data_mootdx(symbol, market, 8, count, since_ts=latest_1m)
+        save_to_db(records_1m, table_1m)
 
         # Fetch 5 min data (freq=0)
-        records_5m = fetch_data_mootdx(symbol, market, 0, count)
-        save_to_db(records_5m, "klines_5m")
+        table_5m = "klines_5m"
+        latest_5m = "1970-01-01 00:00:00" if args.force else get_latest_timestamp(symbol, table_5m)
+        records_5m = fetch_data_mootdx(symbol, market, 0, count, since_ts=latest_5m)
+        save_to_db(records_5m, table_5m)
 
         # Fetch Daily data (freq=9)
-        records_day = fetch_data_mootdx(symbol, market, 9, count)
-        save_to_db(records_day, "klines_daily")
+        table_day = "klines_daily"
+        latest_day = "1970-01-01" if args.force else get_latest_timestamp(symbol, table_day)
+        records_day = fetch_data_mootdx(symbol, market, 9, count, since_ts=latest_day)
+        save_to_db(records_day, table_day)
         
     print("\nDONE: All market data ingestion tasks completed.")
 

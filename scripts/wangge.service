@@ -1,0 +1,14 @@
+[Unit]
+Description=Wangge Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/var/www/wangge/src/backend
+ExecStart=/var/www/wangge/src/backend/wangge-backend
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
