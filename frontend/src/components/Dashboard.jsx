@@ -185,44 +185,6 @@ const Dashboard = () => {
 
                         <div className="w-full h-px bg-white/5 my-2"></div>
 
-                        {/* Chart Settings using state for visualization only */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                                <Settings className="w-4 h-4" />
-                                <h2 className="text-sm font-semibold uppercase tracking-wider">网格参考线</h2>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-medium text-slate-400 ml-1">网格步长 (Ratio)</label>
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        value={gridStep}
-                                        onChange={(e) => setGridStep(e.target.value)}
-                                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-mono"
-                                    />
-                                    <span className="absolute right-4 top-3 text-slate-500 text-xs font-bold">%</span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-medium text-slate-400 ml-1">基准价格 (Base Price)</label>
-                                <div className="relative">
-                                    <div className="absolute left-4 top-3 text-slate-500">
-                                        <DollarSign className="w-3.5 h-3.5" />
-                                    </div>
-                                    <input
-                                        type="number"
-                                        step="0.001"
-                                        value={initialPrice}
-                                        onChange={(e) => setInitialPrice(e.target.value)}
-                                        className="w-full bg-black/20 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-mono"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 text-emerald-400 mb-2">
                                 <TrendingUp className="w-4 h-4" />
