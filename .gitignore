@@ -31,3 +31,8 @@ venv/
 *.db-journal
 *.db-wal
 data/*.db
+
+scripts/deploy.sh
+
+backend/main
+backend/wangge-backend

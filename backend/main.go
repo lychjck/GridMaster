@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite" // Pure Go SQLite driver
 	"gorm.io/gorm"
 )
 
