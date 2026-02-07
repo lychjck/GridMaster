@@ -1,43 +1,52 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2 } from 'lucide-react';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 
 const Dashboard = () => {
-    const [data, setData] = useState([]); // Current displayed klines (for selected date)
+    // === Domain State ===
+    const [data, setData] = useState([]);
     const [currentDayInfo, setCurrentDayInfo] = useState(null);
     const [loading, setLoading] = useState(false);
     const [availableDates, setAvailableDates] = useState([]);
     const [selectedDate, setSelectedDate] = useState('');
 
-    // Symbol State
+    // Symbol & Asset State
     const [selectedSymbol, setSelectedSymbol] = useState('512890');
     const [supportedSymbols, setSupportedSymbols] = useState([]);
+
+    // Adding New Symbol State
     const [newSymbol, setNewSymbol] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const [addingLoading, setAddingLoading] = useState(false);
 
+    // Asset Switcher UI State
+    const [isAssetSwitcherOpen, setIsAssetSwitcherOpen] = useState(false);
+    const [assetSearchTerm, setAssetSearchTerm] = useState('');
+
+    // Chart Settings
     const [gridStep, setGridStep] = useState(0.5);
     const [initialPrice, setInitialPrice] = useState('');
     const [stats, setStats] = useState({ volatility: 0, range: 0 });
+
+    // UI Tab State
+    const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
+
+    // === Effects & Logic ===
 
     // 0. Fetch Symbols
     const fetchSymbols = async () => {
         try {
             const syms = await getSymbols();
             if (syms && syms.length > 0) {
-                // Map API format to UI format
-                // API: {symbol, name, market}
                 const mapped = syms.map(s => ({
                     code: s.symbol,
                     name: s.name,
                     market: s.market === 1 ? 'SH' : 'SZ'
                 }));
-                // Manually add default if database is empty initially, or just rely on DB
+                // Ensure default exists if empty (though DB should have them now)
                 if (mapped.length === 0) {
-                    // Fallback defaults or empty
                     setSupportedSymbols([
                         { code: '512890', name: '红利低波', market: 'SH' },
                         { code: '510300', name: '沪深300', market: 'SH' },
@@ -47,7 +56,6 @@ const Dashboard = () => {
                     setSupportedSymbols(mapped);
                 }
             } else {
-                // Fallback defaults
                 setSupportedSymbols([
                     { code: '512890', name: '红利低波', market: 'SH' },
                     { code: '510300', name: '沪深300', market: 'SH' },
@@ -67,19 +75,13 @@ const Dashboard = () => {
         setAddingLoading(true);
         try {
             await addSymbol(newSymbol);
-            // Wait a bit for backend to start fetching, then start polling or just reload symbols
-            // Ideally we wait for fetch implementation result via SSE or just notify user "Started".
-            // Since backend returns "Accepted", we can assume it starts.
-            // But we want to select it when it's ready. 
-            // For now, let's just refresh list after a short delay or let user wait.
-            // A better UX: "Fetching..." then auto refresh.
-            // Let's optimize: reload symbols after 2 seconds.
             setTimeout(async () => {
                 await fetchSymbols();
                 setSelectedSymbol(newSymbol);
                 setIsAdding(false);
                 setNewSymbol('');
                 setAddingLoading(false);
+                setIsAssetSwitcherOpen(false); // Close dropdown
             }, 2000);
         } catch (e) {
             alert("添加失败: " + e.message);
@@ -96,8 +98,6 @@ const Dashboard = () => {
         try {
             const dates = await getAvailableDates(selectedSymbol);
             setAvailableDates(dates);
-
-            // Auto Select Latest Date
             if (dates.length > 0 && !selectedDate) {
                 const latest = dates[dates.length - 1];
                 setSelectedDate(latest);
@@ -109,14 +109,13 @@ const Dashboard = () => {
 
     useEffect(() => {
         initData();
-    }, [selectedSymbol]); // Re-fetch dates when symbol changes
+    }, [selectedSymbol]);
 
     // 2. Fetch Detailed Klines & Daily Info when Date Selected
     const fetchData = async () => {
         if (!selectedDate) return;
         setLoading(true);
         try {
-            console.log("Fetching data for:", selectedSymbol, selectedDate);
             const [klines, dailies] = await Promise.all([
                 getKlines(selectedDate, selectedSymbol),
                 getDailyKlines(selectedDate, selectedSymbol)
@@ -125,7 +124,6 @@ const Dashboard = () => {
             setData(klines);
             setCurrentDayInfo(dailies.length > 0 ? dailies[0] : null);
 
-            // Set Initial Price default
             if (klines.length > 0 && !initialPrice) {
                 setInitialPrice(klines[klines.length - 1].close);
             }
@@ -141,7 +139,7 @@ const Dashboard = () => {
         fetchData();
         const interval = setInterval(fetchData, 60000);
         return () => clearInterval(interval);
-    }, [selectedDate, selectedSymbol]); // Fetch on Symbol or Date change
+    }, [selectedDate, selectedSymbol]);
 
     const calculateStats = (klines) => {
         if (!klines || klines.length === 0) return;
@@ -157,186 +155,273 @@ const Dashboard = () => {
         });
     };
 
+    // Derived State for Switcher
+    const currentSymbolObj = supportedSymbols.find(s => s.code === selectedSymbol);
+    const currentSymbolName = currentSymbolObj?.name || selectedSymbol;
+    const currentMarket = currentSymbolObj?.market || 'SH';
 
-
-    const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
-
-    const currentSymbolName = supportedSymbols.find(s => s.code === selectedSymbol)?.name || selectedSymbol;
+    const filteredSymbols = supportedSymbols.filter(s =>
+        s.code.includes(assetSearchTerm) || s.name.includes(assetSearchTerm)
+    );
 
     return (
-        <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+        <div className="flex flex-col h-screen text-slate-100 font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
             {/* Header */}
-            <header className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5 backdrop-blur-md sticky top-0 z-10">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-500 rounded-lg shadow-lg shadow-indigo-500/20">
+            <header className="flex items-center justify-between px-6 py-4 glass-panel border-b-0 m-4 mb-0 rounded-2xl z-50 animate-slide-up">
+                <div className="flex items-center gap-6 md:gap-8">
+                    {/* Logo Area */}
+                    <div className="flex items-center gap-3 group cursor-pointer select-none">
+                        <div className="relative p-2.5 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-all duration-300">
                             <TrendingUp className="w-6 h-6 text-white" />
+                            <div className="absolute inset-0 bg-white/20 rounded-xl animate-pulse opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <div>
-                            <h1 className="text-xl font-bold tracking-tight">GridMaster</h1>
-                            <div className="flex items-center gap-2 mt-1">
-                                <select
-                                    value={selectedSymbol}
-                                    onChange={(e) => {
-                                        setSelectedSymbol(e.target.value);
-                                        setSelectedDate(''); // Reset date on symbol switch
-                                        setInitialPrice('');
-                                    }}
-                                    className="bg-black/30 border border-white/10 rounded px-2 py-0.5 text-xs text-indigo-300 font-mono focus:outline-none hover:bg-black/50 transition-colors"
-                                >
-                                    {supportedSymbols.map(s => (
-                                        <option key={s.code} value={s.code}>{s.code} {s.name}</option>
-                                    ))}
-                                </select>
-
-                                {/* Add Symbol Button */}
-                                {!isAdding ? (
-                                    <button
-                                        onClick={() => setIsAdding(true)}
-                                        className="text-white/40 hover:text-indigo-400 transition-colors"
-                                        title="添加新股票"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" />
-                                    </button>
-                                ) : (
-                                    <div className="flex items-center gap-1 animate-in slide-in-from-left-2 fade-in duration-200">
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            placeholder="代码"
-                                            className="w-16 bg-black/40 border border-indigo-500/50 rounded px-1 py-0.5 text-xs text-white focus:outline-none font-mono"
-                                            value={newSymbol}
-                                            onChange={(e) => setNewSymbol(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') handleAddSymbol();
-                                                if (e.key === 'Escape') setIsAdding(false);
-                                            }}
-                                        />
-                                        <button
-                                            onClick={handleAddSymbol}
-                                            disabled={addingLoading}
-                                            className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-2 py-0.5 rounded transition-colors disabled:opacity-50"
-                                        >
-                                            {addingLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : '确定'}
-                                        </button>
-                                        <button
-                                            onClick={() => setIsAdding(false)}
-                                            className="text-white/40 hover:text-white text-[10px] px-1"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                )}
-
-                            </div>
+                        <div className="hidden sm:block">
+                            <h1 className="text-xl font-bold tracking-tight text-white group-hover:text-glow transition-all">GridMaster</h1>
+                            <p className="text-[10px] text-indigo-200/60 font-mono tracking-wider uppercase">Quantitative Trading</p>
                         </div>
                     </div>
 
-                    {/* Tab Navigation */}
-                    <div className="bg-black/20 p-1 rounded-lg border border-white/5 flex gap-1 ml-8">
+                    {/* Divider */}
+                    <div className="h-8 w-px bg-white/10 hidden md:block"></div>
+
+                    {/* Asset Switcher (Command Bar Style) */}
+                    <div className="relative">
                         <button
-                            onClick={() => setActiveTab('chart')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'chart'
-                                ? 'bg-indigo-600 text-white shadow-md'
-                                : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`}
+                            onClick={() => setIsAssetSwitcherOpen(!isAssetSwitcherOpen)}
+                            className="flex items-center gap-4 pl-3 pr-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all duration-200 group w-auto md:w-64 justify-between"
                         >
-                            实时图表
+                            <div className="flex items-center gap-3">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentMarket === 'SH' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]'}`}>
+                                    {currentMarket}
+                                </span>
+                                <div className="flex flex-col items-start gap-0.5 text-left">
+                                    <span className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors whitespace-nowrap">{currentSymbolName}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono tracking-wider">{selectedSymbol}</span>
+                                </div>
+                            </div>
+                            <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-300 hidden md:block ${isAssetSwitcherOpen ? 'rotate-180' : ''}`} />
                         </button>
-                        <button
-                            onClick={() => setActiveTab('simulation')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'simulation'
-                                ? 'bg-indigo-600 text-white shadow-md'
-                                : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`}
-                        >
-                            网格回测
-                        </button>
+
+                        {/* Switcher Dropdown */}
+                        {isAssetSwitcherOpen && (
+                            <div className="absolute top-full left-0 mt-3 w-72 glass-panel rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in slide-in-from-top-2 fade-in duration-200 flex flex-col z-50">
+                                {/* Search */}
+                                <div className="p-3 border-b border-white/5 relative bg-white/[0.02]">
+                                    <Search className="w-4 h-4 text-slate-400 absolute left-6 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="搜索股票代码/名称..."
+                                        className="w-full bg-black/20 border border-white/5 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50 transition-colors placeholder:text-slate-600"
+                                        value={assetSearchTerm}
+                                        onChange={(e) => setAssetSearchTerm(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+
+                                {/* List */}
+                                <div className="max-h-60 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                                    {filteredSymbols.map(s => (
+                                        <button
+                                            key={s.code}
+                                            onClick={() => {
+                                                setSelectedSymbol(s.code);
+                                                setSelectedDate('');
+                                                setInitialPrice('');
+                                                setIsAssetSwitcherOpen(false);
+                                                setAssetSearchTerm('');
+                                            }}
+                                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors group/item ${selectedSymbol === s.code ? 'bg-indigo-500/20 shadow-[inset_0_0_10px_rgba(99,102,241,0.2)] border border-indigo-500/30' : 'border border-transparent hover:bg-white/5'}`}
+                                        >
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className={`text-sm font-medium ${selectedSymbol === s.code ? 'text-indigo-300' : 'text-slate-300 group-hover/item:text-slate-100'}`}>{s.name}</span>
+                                                <span className="text-[10px] text-slate-500 font-mono group-hover/item:text-slate-400">{s.code}</span>
+                                            </div>
+                                            {selectedSymbol === s.code && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                                        </button>
+                                    ))}
+                                    {filteredSymbols.length === 0 && (
+                                        <div className="px-3 py-10 text-center flex flex-col items-center gap-2">
+                                            <Search className="w-8 h-8 text-slate-700" />
+                                            <span className="text-xs text-slate-500">未找到相关资产</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Add New Footer */}
+                                <div className="p-3 border-t border-white/5 bg-white/[0.02]">
+                                    {!isAdding ? (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setIsAdding(true); }}
+                                            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-white/10 text-xs text-slate-400 hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/10 transition-all group"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            <span>添加新股票</span>
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-2 animate-in slide-in-from-bottom-2 duration-200">
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                placeholder="6位代码"
+                                                className="flex-1 bg-black/20 border border-indigo-500/50 rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono"
+                                                value={newSymbol}
+                                                onChange={(e) => setNewSymbol(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') handleAddSymbol();
+                                                    if (e.key === 'Escape') setIsAdding(false);
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <button
+                                                onClick={handleAddSymbol}
+                                                disabled={addingLoading}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg p-2 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                                            >
+                                                {addingLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setIsAdding(false); }}
+                                                className="text-slate-500 hover:text-white p-2"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Overlay to close */}
+                        {isAssetSwitcherOpen && (
+                            <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={() => setIsAssetSwitcherOpen(false)}></div>
+                        )}
                     </div>
                 </div>
 
-                <button
-                    onClick={fetchData}
-                    className="p-2 rounded-full hover:bg-white/10 transition-colors active:scale-95 duration-200"
-                    title="刷新数据"
-                >
-                    <RefreshCw className={`w-5 h-5 text-indigo-400 ${loading ? 'animate-spin' : ''}`} />
-                </button>
+                {/* Right Actions */}
+                <div className="flex items-center gap-4">
+                    {/* Tab Navigation */}
+                    <div className="bg-black/20 p-1 rounded-xl border border-white/5 flex gap-1 backdrop-blur-md">
+                        <button
+                            onClick={() => setActiveTab('chart')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 relative overflow-hidden flex items-center gap-2 ${activeTab === 'chart' ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                            {activeTab === 'chart' && (
+                                <div className="absolute inset-0 bg-indigo-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] rounded-lg"></div>
+                            )}
+                            <LineChart className="w-4 h-4 relative z-10" />
+                            <span className="relative z-10 hidden sm:inline">实时图表</span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('simulation')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 relative overflow-hidden flex items-center gap-2 ${activeTab === 'simulation' ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                            {activeTab === 'simulation' && (
+                                <div className="absolute inset-0 bg-indigo-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] rounded-lg"></div>
+                            )}
+                            <BarChart3 className="w-4 h-4 relative z-10" />
+                            <span className="relative z-10 hidden sm:inline">网格回测</span>
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={fetchData}
+                        className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-indigo-400 hover:text-indigo-300 transition-all active:scale-95 duration-200 group relative overflow-hidden"
+                        title="刷新数据"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+                    </button>
+                </div>
             </header>
 
-            <div className="flex flex-1 overflow-hidden">
-                {/* Sidebar Controls - Only visible for Chart Tab */}
+            <div className="flex flex-1 overflow-hidden p-4 pt-0 gap-4">
+                {/* Sidebar Controls - Using Glass Panel style */}
                 {activeTab === 'chart' && (
-                    <aside className="w-80 border-r border-white/10 bg-white/5 p-6 flex flex-col gap-6 overflow-y-auto hidden md:flex">
+                    <aside className="w-80 glass-panel rounded-2xl p-6 flex flex-col gap-6 overflow-y-auto hidden md:flex animate-slide-up" style={{ animationDelay: '0.1s' }}>
                         {/* Date Selector */}
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                                <div className="w-4 h-4 rounded-full border-2 border-indigo-400"></div>
-                                <h2 className="text-sm font-semibold uppercase tracking-wider">选择日期</h2>
+                                <div className="w-1.5 h-4 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
+                                <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Time Machine</h2>
                             </div>
-                            <div className="relative">
+                            <div className="relative group">
                                 <select
                                     value={selectedDate}
                                     onChange={(e) => setSelectedDate(e.target.value)}
-                                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-mono appearance-none"
+                                    className="w-full bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all font-mono appearance-none text-slate-200 cursor-pointer"
                                 >
                                     {availableDates.map(date => (
                                         <option key={date} value={date} className="bg-slate-900 text-slate-200">{date}</option>
                                     ))}
                                 </select>
-                                <div className="absolute right-4 top-3.5 pointer-events-none text-slate-500">
-                                    ▼
+                                <div className="absolute right-4 top-3.5 pointer-events-none text-slate-500 group-hover:text-indigo-400 transition-colors">
+                                    <ChevronDown className="w-4 h-4" />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="w-full h-px bg-white/5 my-2"></div>
+                        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent my-2"></div>
 
+                        {/* Stats Cards */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 text-emerald-400 mb-2">
-                                <TrendingUp className="w-4 h-4" />
-                                <h2 className="text-sm font-semibold uppercase tracking-wider">当日统计 ({selectedDate.slice(5)})</h2>
+                                <div className="w-1.5 h-4 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                                <h2 className="text-xs font-bold uppercase tracking-widest text-emerald-300/80">Daily Stats ({selectedDate.slice(5)})</h2>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                                    <p className="text-xs text-slate-400 mb-1">振幅 (Range)</p>
-                                    <p className="text-xl font-bold font-mono text-white">{stats.range}%</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="group bg-white/5 hover:bg-white/[0.08] p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
+                                    <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">振幅 Range</p>
+                                    <p className="text-lg font-bold font-mono text-white group-hover:text-glow transition-all">{stats.range}%</p>
                                 </div>
-                                <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                                    <p className="text-xs text-slate-400 mb-1">波动因子</p>
-                                    <p className="text-xl font-bold font-mono text-white">{stats.volatility}</p>
+                                <div className="group bg-white/5 hover:bg-white/[0.08] p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
+                                    <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">波动 Volatility</p>
+                                    <p className="text-lg font-bold font-mono text-white group-hover:text-glow transition-all">{stats.volatility}</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="mt-auto p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                            <p className="text-xs text-indigo-200 leading-relaxed">
-                                <strong>提示:</strong> 切换到“网格回测”标签页可进行详细的历史策略回测。
+                        <div className="mt-auto p-4 bg-gradient-to-br from-indigo-500/20 to-purple-500/10 border border-indigo-500/20 rounded-2xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <BarChart3 className="w-16 h-16" />
+                            </div>
+                            <p className="text-xs text-indigo-200 leading-relaxed relative z-10">
+                                <strong className="text-white block mb-1 text-sm">Pro Tip</strong>
+                                切换到上方“网格回测”标签页，使用历史数据模拟你的网格策略表现。
                             </p>
                         </div>
                     </aside>
                 )}
 
                 {/* Main Content Area */}
-                <main className={`flex-1 relative bg-gradient-to-br from-slate-950 to-slate-900 ${activeTab === 'simulation' ? 'p-8 overflow-y-auto' : ''}`}>
+                <main className={`flex-1 relative transition-all duration-300 ${activeTab === 'simulation' ? 'overflow-y-auto rounded-2xl custom-scrollbar' : 'overflow-hidden'}`}>
                     {activeTab === 'chart' ? (
                         loading ? (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="flex flex-col items-center gap-4">
-                                    <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
-                                    <p className="text-slate-400 animate-pulse text-sm font-medium">Loading Market Data...</p>
+                            <div className="w-full h-full glass-panel rounded-2xl flex items-center justify-center animate-pulse border border-white/5">
+                                <div className="flex flex-col items-center gap-6">
+                                    <div className="relative">
+                                        <div className="w-16 h-16 rounded-full border-4 border-indigo-500/30 border-t-indigo-500 animate-spin"></div>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <TrendingUp className="w-6 h-6 text-indigo-400" />
+                                        </div>
+                                    </div>
+                                    <p className="text-slate-400 text-sm font-medium tracking-wide">LOADING DATA...</p>
                                 </div>
                             </div>
                         ) : (
-                            <div className="w-full h-full p-6">
-                                <div className="w-full h-full bg-black/20 rounded-3xl border border-white/5 shadow-2xl overflow-hidden backdrop-blur-sm">
+                            <div className="w-full h-full glass-panel rounded-2xl border border-white/5 shadow-2xl overflow-hidden relative group animate-slide-up" style={{ animationDelay: '0.05s' }}>
+                                {/* Ambient Light Effect behind chart */}
+                                <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-indigo-500/20 rounded-full blur-[120px] pointer-events-none opacity-50"></div>
+                                <div className="absolute bottom-[-20%] left-[-10%] w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none opacity-50"></div>
+
+                                <div className="w-full h-full relative z-10 p-2">
                                     <VolatilityChart data={data} dailyInfo={currentDayInfo} gridStep={gridStep} initialPrice={initialPrice} />
                                 </div>
                             </div>
                         )
                     ) : (
                         // Simulation Tab Content - Full Screen
-                        <div className="max-w-6xl mx-auto">
+                        <div className="glass-panel min-h-full rounded-2xl p-8 border border-white/5 animate-slide-up">
                             <SimulationPanel availableDates={availableDates} initialBasePrice={initialPrice} symbol={selectedSymbol} />
                         </div>
                     )}

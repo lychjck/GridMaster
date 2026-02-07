@@ -3,9 +3,102 @@
 @theme {
   --color-slate-950: #020617;
   --color-slate-50: #f8fafc;
+
+  /* Cyber Glass Custom Colors */
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --color-glass-surface: rgba(13, 17, 23, 0.90);
+  /* Increased opacity from 0.3 */
+  --color-glass-highlight: rgba(255, 255, 255, 0.05);
+
+  --color-accent-primary: #6366f1;
+  /* Indigo 500 */
+  --color-accent-glow: rgba(99, 102, 241, 0.5);
+
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.4s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }
 
 body {
-  background-color: var(--color-slate-950);
-  color: var(--color-slate-50);
+  margin: 0;
+  min-height: 100vh;
+  background-color: #000000;
+  /* Aurora Background */
+  background-image:
+    radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 60%),
+    radial-gradient(circle at 100% 0%, #312e81 0%, transparent 50%),
+    radial-gradient(circle at 0% 0%, #0f172a 0%, transparent 50%);
+  background-attachment: fixed;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  /* App-like feel */
+}
+
+/* Custom Scrollbar for Webkit */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Utility Classes for Glassmorphism */
+.glass-panel {
+  background: var(--color-glass-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-glass-border);
+}
+
+.glass-button {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s;
+}
+
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.accent-glow {
+  box-shadow: 0 0 20px var(--color-accent-glow);
 }
