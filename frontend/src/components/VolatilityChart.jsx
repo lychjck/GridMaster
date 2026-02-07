@@ -95,13 +95,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
             if (!baseOverlapsClose) {
                 gridChartLines.push({
                     yAxis: base,
-                    label: {
-                        formatter: '基准价',
-                        position: 'end',
-                        color: '#fff',
-                        fontWeight: 'bold',
-                        fontSize: 10
-                    },
+                    label: { show: false },
                     lineStyle: {
                         color: 'rgba(255, 255, 255, 0.3)',
                         type: 'solid',
@@ -426,7 +420,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, 0],
+                        offset: [-10, 0], // 与紫线在同一水平
                         fontSize: 11
                     },
                     z: 5
@@ -446,7 +440,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, dayOpen >= dayClose ? -14 : 14],
+                        offset: [-10, 22], // 移至第二层
                         fontSize: 11
                     },
                     z: 5
@@ -465,7 +459,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, dayClose > dayOpen ? -14 : 14],
+                        offset: [-10, 44], // 移至第三层
                         fontSize: 11
                     },
                     z: 5
