@@ -4,20 +4,38 @@ import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar } f
 import TradeChart from './TradeChart';
 
 const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
-    const [config, setConfig] = useState({
-        startDate: availableDates[0] || '2026-01-01',
-        basePrice: initialBasePrice || 1.100,
-        gridStep: 0.005,
-        gridStepType: 'absolute', // 'percent' | 'absolute'
-        amountPerGrid: 2000,
-        commissionRate: 0.0001, // 万1
-        minCommission: 0.2,
-        usePenetration: false // New: default to false
+    const [config, setConfig] = useState(() => {
+        const saved = localStorage.getItem('sim_config');
+        return saved ? JSON.parse(saved) : {
+            startDate: availableDates[0] || '2026-01-01',
+            basePrice: initialBasePrice || 1.100,
+            gridStep: 0.005,
+            gridStepType: 'absolute', // 'percent' | 'absolute'
+            amountPerGrid: 2000,
+            commissionRate: 0.0001, // 万1
+            minCommission: 0.2,
+            usePenetration: false
+        };
     });
 
-    const [result, setResult] = useState(null);
+    const [result, setResult] = useState(() => {
+        const saved = localStorage.getItem('sim_result');
+        return saved ? JSON.parse(saved) : null;
+    });
+
     const [loading, setLoading] = useState(false);
     const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart'
+
+    // Sync state to localStorage
+    React.useEffect(() => {
+        localStorage.setItem('sim_config', JSON.stringify(config));
+    }, [config]);
+
+    React.useEffect(() => {
+        if (result) {
+            localStorage.setItem('sim_result', JSON.stringify(result));
+        }
+    }, [result]);
 
     const handleSimulate = async () => {
         setLoading(true);

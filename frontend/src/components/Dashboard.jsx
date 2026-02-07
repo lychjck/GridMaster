@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
-import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol } from '../lib/api';
+import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2 } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
@@ -11,10 +11,10 @@ const Dashboard = () => {
     const [currentDayInfo, setCurrentDayInfo] = useState(null);
     const [loading, setLoading] = useState(false);
     const [availableDates, setAvailableDates] = useState([]);
-    const [selectedDate, setSelectedDate] = useState('');
+    const [selectedDate, setSelectedDate] = useState(localStorage.getItem('selectedDate') || '');
 
     // Symbol & Asset State
-    const [selectedSymbol, setSelectedSymbol] = useState('512890');
+    const [selectedSymbol, setSelectedSymbol] = useState(localStorage.getItem('selectedSymbol') || '512890');
     const [supportedSymbols, setSupportedSymbols] = useState([]);
 
     // Adding New Symbol State
@@ -30,9 +30,9 @@ const Dashboard = () => {
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
     // Chart Settings
-    const [gridStep, setGridStep] = useState(0.5);
-    const [gridStepUnit, setGridStepUnit] = useState('percent'); // 'percent' | 'value'
-    const [initialPrice, setInitialPrice] = useState('');
+    const [gridStep, setGridStep] = useState(parseFloat(localStorage.getItem('gridStep')) || 0.5);
+    const [gridStepUnit, setGridStepUnit] = useState(localStorage.getItem('gridStepUnit') || 'percent'); // 'percent' | 'value'
+    const [initialPrice, setInitialPrice] = useState(localStorage.getItem('initialPrice') || '');
     const [stats, setStats] = useState({ volatility: 0, range: 0, spread: 0 });
     const [simulatedTrades, setSimulatedTrades] = useState([]);
     const [showLiveTrades, setShowLiveTrades] = useState(false);
@@ -135,9 +135,7 @@ const Dashboard = () => {
             }
 
             calculateStats(klines);
-            // Clear trades when switching assets or dates
-            setSimulatedTrades([]);
-            setShowLiveTrades(false);
+            // Don't clear trades automatically here, let the [selectedSymbol] effect handle it
         } catch (err) {
             console.error("Fetch failed", err);
         } finally {
@@ -147,22 +145,36 @@ const Dashboard = () => {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 60000);
-        return () => clearInterval(interval);
+        // 移除自动刷新，避免干扰用户分析
+        // const interval = setInterval(fetchData, 60000);
+        // return () => clearInterval(interval);
     }, [selectedDate, selectedSymbol]);
 
-    // 3. Stats Effect
+    // Sync state to localStorage
+    useEffect(() => { localStorage.setItem('selectedSymbol', selectedSymbol); }, [selectedSymbol]);
+    useEffect(() => { localStorage.setItem('selectedDate', selectedDate); }, [selectedDate]);
+    useEffect(() => { localStorage.setItem('gridStep', gridStep); }, [gridStep]);
+    useEffect(() => { localStorage.setItem('gridStepUnit', gridStepUnit); }, [gridStepUnit]);
+    useEffect(() => { localStorage.setItem('initialPrice', initialPrice); }, [initialPrice]);
+
+    // Clear simulation markers IF AND ONLY IF asset changes, NOT for every fetch
+    useEffect(() => {
+        setShowLiveTrades(false);
+        setSimulatedTrades([]);
+    }, [selectedSymbol]);
+
+    // Clear simulation markers if core grid settings change
+    useEffect(() => {
+        setShowLiveTrades(false);
+        setSimulatedTrades([]);
+    }, [gridStep, gridStepUnit, initialPrice]);
+
+    // Update stats when data changes
     useEffect(() => {
         if (data && data.length > 0) {
             calculateStats(data);
         }
     }, [data]);
-
-    // Clear simulation markers if settings change
-    useEffect(() => {
-        setShowLiveTrades(false);
-        setSimulatedTrades([]);
-    }, [gridStep, gridStepUnit, initialPrice]);
 
     const calculateStats = (klines) => {
         if (!klines || klines.length === 0) return;
@@ -180,81 +192,65 @@ const Dashboard = () => {
         });
     };
 
-    const handleRunSimulation = () => {
-        if (data && data.length > 0) {
-            simulateGridTrades(data);
-            setShowLiveTrades(true);
+    const handleRunSimulation = async () => {
+        if (!data || data.length === 0 || !initialPrice || !gridStep) return;
+
+        setLoading(true);
+        try {
+            // 1. Construct Config for Backend
+            const config = {
+                symbol: selectedSymbol,
+                startDate: selectedDate,
+                basePrice: parseFloat(initialPrice),
+                gridStep: parseFloat(gridStep),
+                gridStepType: gridStepUnit === 'value' ? 'absolute' : 'percent', // Map 'value' to 'absolute' for backend
+                amountPerGrid: 100, // Default or add UI input later
+                commissionRate: 0.0001,
+                minCommission: 0.1,
+                usePenetration: false
+            };
+
+            // 2. Call Backend API
+            const res = await runSimulation(config);
+
+            if (res && res.trades) {
+                // 3. Map Backend Trades to Chart Indices
+                // Create a map for O(1) lookup: "HH:MM" -> index
+                // Note: Backend returns full timestamp "YYYY-MM-DD HH:MM:SS", Frontend data has "YYYY-MM-DD HH:MM:SS"
+                const timeToIndex = new Map();
+                data.forEach((item, index) => {
+                    timeToIndex.set(item.timestamp, index);
+                });
+
+                const mappedTrades = res.trades.map(t => {
+                    const idx = timeToIndex.get(t.time);
+                    if (idx !== undefined) {
+                        return {
+                            type: t.type === 'BUY' ? 'B' : 'S',
+                            index: idx,
+                            price: t.price,
+                            time: t.time
+                        };
+                    }
+                    return null;
+                }).filter(t => t !== null);
+
+                setSimulatedTrades(mappedTrades);
+                setShowLiveTrades(true);
+            } else {
+                setSimulatedTrades([]);
+            }
+        } catch (err) {
+            console.error("Simulation failed:", err);
+            alert("模拟失败: " + err.message);
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleClearSimulation = () => {
         setShowLiveTrades(false);
         setSimulatedTrades([]);
-    };
-
-    const simulateGridTrades = (klines) => {
-        if (!initialPrice || !gridStep || !klines || klines.length === 0) {
-            setSimulatedTrades([]);
-            return;
-        }
-
-        const base = parseFloat(initialPrice);
-        const stepVal = parseFloat(gridStep);
-        if (isNaN(base) || isNaN(stepVal) || stepVal <= 0) return;
-
-        const trades = [];
-        let lastGridPrice = base;
-
-        const EPSILON = 1e-7;
-
-        klines.forEach((k, i) => {
-            const high = Number(k.high);
-            const low = Number(k.low);
-            const close = Number(k.close);
-
-            // 算法：在单根 K 线内模拟多次成交
-            let keepChecking = true;
-            while (keepChecking) {
-                keepChecking = false;
-
-                // 计算当前基线下的实际步长
-                const actualStep = gridStepUnit === 'percent'
-                    ? lastGridPrice * (stepVal / 100)
-                    : stepVal;
-
-                // 向上穿轴：卖出
-                if (high - lastGridPrice >= actualStep - EPSILON) {
-                    const triggerPrice = lastGridPrice + actualStep;
-                    trades.push({
-                        type: 'S',
-                        index: i,
-                        price: triggerPrice,
-                        actualClose: close,
-                        time: k.timestamp
-                    });
-                    lastGridPrice = triggerPrice;
-                    keepChecking = true;
-                    continue; // 重新计算步幅并检查
-                }
-
-                // 向下穿轴：买入
-                if (lastGridPrice - low >= actualStep - EPSILON) {
-                    const triggerPrice = lastGridPrice - actualStep;
-                    trades.push({
-                        type: 'B',
-                        index: i,
-                        price: triggerPrice,
-                        actualClose: close,
-                        time: k.timestamp
-                    });
-                    lastGridPrice = triggerPrice;
-                    keepChecking = true;
-                    continue; // 重新计算步幅并检查
-                }
-            }
-        });
-
-        setSimulatedTrades(trades);
     };
 
     // Derived State for Switcher

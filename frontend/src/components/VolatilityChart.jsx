@@ -53,7 +53,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
         // This ensures the chart looks "connected" from the open.
         let chartDates = data.map(item => item.timestamp);
         let chartPrices = data.map(item => item.close);
-        let chartVolumes = data.map((item, index) => [index, item.volume, item.open > item.close ? 1 : -1]);
+        let chartVolumes = data.map((item, index) => [index, item.volume, item.close >= item.open ? 1 : -1]);
 
         let hasSynthesizedStart = false;
         if (data.length > 0) {
@@ -116,7 +116,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
             const chartIndex = trade.index + indexOffset;
             // Check boundaries
             if (chartIndex >= 0 && chartIndex < prices.length) {
-                const yValue = prices[chartIndex];
+                const yValue = trade.price; // 使用后端返回的精确价格
                 const point = [chartIndex, yValue]; // [xIndex, yValue]
 
                 if (trade.type === 'B') {
@@ -425,6 +425,63 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     },
                     z: 5
                 },
+                // Highlighted K-Lines for Trades (Robust Implementation)
+                {
+                    name: '成交K线',
+                    type: 'candlestick',
+                    data: (() => {
+                        const indexOffset = hasSynthesizedStart ? 1 : 0;
+                        const klineData = new Array(prices.length).fill('-');
+
+                        // 仅保留有成交的点位
+                        const tradeIndices = new Set(tradePoints.map(t => t.index + indexOffset));
+
+                        tradeIndices.forEach(idx => {
+                            const dataIdx = idx - indexOffset;
+                            if (dataIdx >= 0 && dataIdx < data.length) {
+                                const item = data[dataIdx];
+                                const open = parseFloat(item.open);
+                                const close = parseFloat(item.close);
+                                const low = parseFloat(item.low);
+                                const high = parseFloat(item.high);
+
+                                // ECharts Candlestick: [Open, Close, Low, High]
+                                // 移除之前的影线拉伸逻辑，保持原始行情数据
+                                klineData[idx] = [open, close, low, high];
+                            }
+                        });
+
+                        return klineData;
+                    })(),
+                    itemStyle: {
+                        color: '#ef4444',
+                        color0: '#10b981',
+                        borderColor: '#ef4444',
+                        borderColor0: '#10b981',
+                        opacity: 0 // 默认隐藏，保持界面美观
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            opacity: 0.8 // Hover 时显现
+                        }
+                    },
+                    tooltip: {
+                        formatter: (params) => {
+                            const o = params.data[1];
+                            const c = params.data[2];
+                            const l = params.data[3];
+                            const h = params.data[4];
+                            return `
+                            <div class="font-bold mb-1">成交K线详情</div>
+                            <div class="text-xs text-slate-300">Open: ${o}</div>
+                            <div class="text-xs text-slate-300">Close: ${c}</div>
+                            <div class="text-xs text-slate-300">Low: ${l}</div>
+                            <div class="text-xs text-slate-300">High: ${h}</div>
+                         `;
+                        }
+                    },
+                    z: 10 // Behind Points (20) but above Line (2)
+                },
                 // Reference Lines as Real Series for perfect alignment
                 {
                     name: '开盘价',
@@ -472,6 +529,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     data: volumes,
                     itemStyle: {
                         color: (params) => {
+                            // params.data[2]: 1 表示当日收盘 > 开盘 (涨), -1 表示跌
                             return params.data[2] === 1 ? '#ef4444' : '#22c55e';
                         }
                     }
