@@ -111,6 +111,9 @@ const TradeChart = ({ data, trades }) => {
                 color: '#888',
                 formatter: (value) => value.toFixed(3)
             },
+            axisPointer: {
+                snap: true
+            },
             splitLine: {
                 lineStyle: { color: 'rgba(255,255,255,0.05)' }
             }

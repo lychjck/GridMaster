@@ -267,6 +267,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         formatter: (value) => value.toFixed(3)
                     },
                     axisPointer: {
+                        snap: true,
                         label: {
                             precision: 3
                         }
