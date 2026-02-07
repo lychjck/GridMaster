@@ -202,39 +202,55 @@ const Dashboard = () => {
         const stepVal = parseFloat(gridStep);
         if (isNaN(base) || isNaN(stepVal) || stepVal <= 0) return;
 
-        // Calculate actual step in price units
-        const actualStep = gridStepUnit === 'percent'
-            ? base * (stepVal / 100)
-            : stepVal;
-
         const trades = [];
-        // Initial anchor is the base price (or close price of first kline if we want to be strictly reactive)
-        // Let's use the nearest grid level to base price as the starting anchor.
         let lastGridPrice = base;
 
+        const EPSILON = 1e-7;
+
         klines.forEach((k, i) => {
-            const currentClose = k.close;
+            const high = Number(k.high);
+            const low = Number(k.low);
+            const close = Number(k.close);
 
-            // Check for multiple steps (if price moves significantly in one interval)
-            // This loop handles both upward and downward trends.
-            while (Math.abs(currentClose - lastGridPrice) >= actualStep) {
-                const isUp = currentClose > lastGridPrice;
-                const type = isUp ? 'S' : 'B'; // Crossed Up -> Sell, Crossed Down -> Buy
+            // 算法：在单根 K 线内模拟多次成交
+            let keepChecking = true;
+            while (keepChecking) {
+                keepChecking = false;
 
-                const nextGridPrice = isUp
-                    ? lastGridPrice + actualStep
-                    : lastGridPrice - actualStep;
+                // 计算当前基线下的实际步长
+                const actualStep = gridStepUnit === 'percent'
+                    ? lastGridPrice * (stepVal / 100)
+                    : stepVal;
 
-                trades.push({
-                    type,
-                    index: i,
-                    price: nextGridPrice, // Grid execution price is the level, not necessarily the candle close
-                    actualClose: currentClose,
-                    time: k.timestamp,
-                    lastAnchor: lastGridPrice
-                });
+                // 向上穿轴：卖出
+                if (high - lastGridPrice >= actualStep - EPSILON) {
+                    const triggerPrice = lastGridPrice + actualStep;
+                    trades.push({
+                        type: 'S',
+                        index: i,
+                        price: triggerPrice,
+                        actualClose: close,
+                        time: k.timestamp
+                    });
+                    lastGridPrice = triggerPrice;
+                    keepChecking = true;
+                    continue; // 重新计算步幅并检查
+                }
 
-                lastGridPrice = nextGridPrice;
+                // 向下穿轴：买入
+                if (lastGridPrice - low >= actualStep - EPSILON) {
+                    const triggerPrice = lastGridPrice - actualStep;
+                    trades.push({
+                        type: 'B',
+                        index: i,
+                        price: triggerPrice,
+                        actualClose: close,
+                        time: k.timestamp
+                    });
+                    lastGridPrice = triggerPrice;
+                    keepChecking = true;
+                    continue; // 重新计算步幅并检查
+                }
             }
         });
 

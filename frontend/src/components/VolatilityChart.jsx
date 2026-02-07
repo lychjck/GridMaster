@@ -411,15 +411,34 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     },
                     z: 20
                 },
+                // Grid Baseline
+                initialPrice && {
+                    name: '网格基准',
+                    type: 'line',
+                    data: prices.map(() => parseFloat(initialPrice)),
+                    showSymbol: false,
+                    lineStyle: { color: '#a855f7', width: 2, type: 'dashed', opacity: 0.8 },
+                    label: { show: false },
+                    endLabel: {
+                        show: true,
+                        formatter: `基准: ${parseFloat(initialPrice).toFixed(3)}`,
+                        color: '#a855f7',
+                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        offset: [-10, 0],
+                        fontSize: 11
+                    },
+                    z: 5
+                },
                 // Reference Lines as Real Series for perfect alignment
-                // 根据开盘价和收盘价的差距动态调整标签偏移，避免重叠
                 {
                     name: '开盘价',
                     type: 'line',
                     data: prices.map(() => dayOpen),
                     showSymbol: false,
-                    lineStyle: { color: '#fbbf24', width: 2, type: 'solid' },
-                    label: { show: false }, // Tooltip handles it
+                    lineStyle: { color: '#fbbf24', width: 1.5, type: 'solid', opacity: 0.6 },
+                    label: { show: false },
                     endLabel: {
                         show: true,
                         formatter: `开盘: ${dayOpen.toFixed(3)}`,
@@ -427,7 +446,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, dayOpen >= dayClose ? -14 : 14], // 开盘高时在上方，否则在下方
+                        offset: [-10, dayOpen >= dayClose ? -14 : 14],
                         fontSize: 11
                     },
                     z: 5
@@ -437,7 +456,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     type: 'line',
                     data: prices.map(() => dayClose),
                     showSymbol: false,
-                    lineStyle: { color: '#38bdf8', width: 2, type: 'solid' },
+                    lineStyle: { color: '#38bdf8', width: 1.5, type: 'solid', opacity: 0.6 },
                     label: { show: false },
                     endLabel: {
                         show: true,
@@ -446,7 +465,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, dayClose > dayOpen ? -14 : 14], // 收盘高时在上方，否则在下方
+                        offset: [-10, dayClose > dayOpen ? -14 : 14],
                         fontSize: 11
                     },
                     z: 5
