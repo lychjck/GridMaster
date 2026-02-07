@@ -65,7 +65,7 @@ const TradeChart = ({ data, trades }) => {
                 return `
                     <div style="font-size:12px;">
                         <div style="margin-bottom:4px; font-weight:bold;">${item.timestamp}</div>
-                        <div>价格: <span style="color:#38bdf8">${item.close.toFixed(4)}</span></div>
+                        <div>价格: <span style="color:#38bdf8">${item.close.toFixed(3)}</span></div>
                     </div>
                 `;
             }

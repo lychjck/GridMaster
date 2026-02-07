@@ -265,6 +265,11 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     axisLabel: {
                         color: '#888',
                         formatter: (value) => value.toFixed(3)
+                    },
+                    axisPointer: {
+                        label: {
+                            precision: 3
+                        }
                     }
                 },
                 {
@@ -562,7 +567,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
             const minP = Math.min(p1, p2);
             const diffPct = (diff / minP) * 100;
             measurementInfo = {
-                diff: diff.toFixed(4),
+                diff: diff.toFixed(3),
                 pct: diffPct.toFixed(2),
                 p1: p1.toFixed(3),
                 p2: p2.toFixed(3)

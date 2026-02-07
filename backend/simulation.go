@@ -159,7 +159,7 @@ func runSimulation(c *gin.Context) {
 			dailyStatsMap[date] = &DailyStat{Date: date}
 		}
 		stat := dailyStatsMap[date]
-		stat.ClosePrice = k.Close // Update close
+		stat.ClosePrice = RoundTo3(k.Close) // Update close
 
 		// Check Buy Down
 		for {
@@ -196,9 +196,9 @@ func runSimulation(c *gin.Context) {
 					result.Trades = append(result.Trades, Trade{
 						Time:   k.Timestamp,
 						Type:   "BUY",
-						Price:  nextBuyPrice,
+						Price:  RoundTo3(nextBuyPrice),
 						Amount: config.AmountPerGrid,
-						Comm:   comm,
+						Comm:   RoundTo3(comm),
 					})
 				} else {
 					break
@@ -252,9 +252,9 @@ func runSimulation(c *gin.Context) {
 				result.Trades = append(result.Trades, Trade{
 					Time:   k.Timestamp,
 					Type:   "SELL",
-					Price:  nextSellPrice,
+					Price:  RoundTo3(nextSellPrice),
 					Amount: config.AmountPerGrid,
-					Comm:   comm,
+					Comm:   RoundTo3(comm),
 				})
 			} else {
 				break
@@ -265,13 +265,17 @@ func runSimulation(c *gin.Context) {
 	// Aggregate
 	var sortedStats []DailyStat
 	for _, s := range dailyStatsMap {
-		s.NetProfit = s.GrossProfit - s.Commission
+		s.NetProfit = RoundTo3(s.GrossProfit - s.Commission)
+		s.GrossProfit = RoundTo3(s.GrossProfit)
+		s.Commission = RoundTo3(s.Commission)
 		sortedStats = append(sortedStats, *s)
 
 		result.TotalProfit += s.NetProfit
 		result.TotalTx += (s.BuyCount + s.SellCount)
 		result.TotalComm += s.Commission
 	}
+	result.TotalProfit = RoundTo3(result.TotalProfit)
+	result.TotalComm = RoundTo3(result.TotalComm)
 
 	// Sort
 	sort.Slice(sortedStats, func(i, j int) bool {
@@ -285,4 +289,8 @@ func runSimulation(c *gin.Context) {
 
 func MathRound(x float64) float64 {
 	return math.Round(x)
+}
+
+func RoundTo3(x float64) float64 {
+	return math.Round(x*1000) / 1000
 }
