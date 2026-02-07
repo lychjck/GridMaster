@@ -3,6 +3,7 @@ import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
+import CyberDatePicker from './CyberDatePicker';
 
 const Dashboard = () => {
     // === Domain State ===
@@ -25,6 +26,9 @@ const Dashboard = () => {
     const [isAssetSwitcherOpen, setIsAssetSwitcherOpen] = useState(false);
     const [assetSearchTerm, setAssetSearchTerm] = useState('');
 
+    // Date Picker UI State
+    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
     // Chart Settings
     const [gridStep, setGridStep] = useState(0.5);
     const [initialPrice, setInitialPrice] = useState('');
@@ -45,7 +49,6 @@ const Dashboard = () => {
                     name: s.name,
                     market: s.market === 1 ? 'SH' : 'SZ'
                 }));
-                // Ensure default exists if empty (though DB should have them now)
                 if (mapped.length === 0) {
                     setSupportedSymbols([
                         { code: '512890', name: '红利低波', market: 'SH' },
@@ -339,25 +342,42 @@ const Dashboard = () => {
                 {/* Sidebar Controls - Using Glass Panel style */}
                 {activeTab === 'chart' && (
                     <aside className="w-80 glass-panel rounded-2xl p-6 flex flex-col gap-6 overflow-y-auto hidden md:flex animate-slide-up" style={{ animationDelay: '0.1s' }}>
-                        {/* Date Selector */}
-                        <div className="space-y-3">
+                        {/* Date Selector (Cyber-Glass Style) */}
+                        <div className="space-y-3 relative z-30">
                             <div className="flex items-center gap-2 text-indigo-400 mb-2">
                                 <div className="w-1.5 h-4 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
                                 <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Time Machine</h2>
                             </div>
-                            <div className="relative group">
-                                <select
-                                    value={selectedDate}
-                                    onChange={(e) => setSelectedDate(e.target.value)}
-                                    className="w-full bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all font-mono appearance-none text-slate-200 cursor-pointer"
+
+                            <div className="relative">
+                                {/* Trigger Button */}
+                                <button
+                                    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                                    className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
                                 >
-                                    {availableDates.map(date => (
-                                        <option key={date} value={date} className="bg-slate-900 text-slate-200">{date}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-4 top-3.5 pointer-events-none text-slate-500 group-hover:text-indigo-400 transition-colors">
-                                    <ChevronDown className="w-4 h-4" />
-                                </div>
+                                    <span className="font-mono">{selectedDate || 'Select Date'}</span>
+                                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {/* Dropdown List (Calendar) */}
+                                {isDatePickerOpen && (
+                                    <>
+                                        {/* Backdrop to close */}
+                                        <div className="fixed inset-0 z-40" onClick={() => setIsDatePickerOpen(false)}></div>
+
+                                        <div className="absolute top-full left-0 mt-2 glass-panel rounded-xl shadow-2xl shadow-black/50 overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                                            <CyberDatePicker
+                                                selectedDate={selectedDate}
+                                                availableDates={availableDates}
+                                                onSelect={(date) => {
+                                                    setSelectedDate(date);
+                                                    setIsDatePickerOpen(false);
+                                                }}
+                                                onClose={() => setIsDatePickerOpen(false)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
 
