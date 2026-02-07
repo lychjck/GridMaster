@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"sort"
 
@@ -29,6 +30,16 @@ type Kline struct {
 	Turnover  float64 `json:"turnover"`
 }
 
+type Symbol struct {
+	Symbol string `gorm:"primaryKey" json:"symbol"`
+	Name   string `json:"name"`
+	Market int    `json:"market"`
+}
+
+type AddSymbolRequest struct {
+	Symbol string `json:"symbol" binding:"required"`
+}
+
 func main() {
 	dbPath := "../data/market.db"
 	absPath, _ := filepath.Abs(dbPath)
@@ -39,6 +50,9 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to connect database:", err)
 	}
+
+	// Auto Migrate
+	DB.AutoMigrate(&Symbol{})
 
 	r := gin.Default()
 
@@ -55,6 +69,52 @@ func main() {
 
 	// Register Simulation
 	RegisterSimulationRoutes(r)
+
+	// GET /api/symbols - Get list of supported symbols
+	r.GET("/api/symbols", func(c *gin.Context) {
+		var symbols []Symbol
+		if err := DB.Order("symbol asc").Find(&symbols).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": symbols})
+	})
+
+	// POST /api/symbols - Add new symbol (trigger python fetch)
+	r.POST("/api/symbols", func(c *gin.Context) {
+		var req AddSymbolRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Check if already exists
+		var exists Symbol
+		if err := DB.First(&exists, "symbol = ?", req.Symbol).Error; err == nil {
+			c.JSON(http.StatusOK, gin.H{"message": "Symbol already exists", "data": exists})
+			return
+		}
+
+		// Trigger Python Script Asynchronously
+		go func(symbol string) {
+			cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", symbol, "--count", "800")
+			cmd.Dir = "../" // Scripts are in ../scripts relative to backend binary if running from backend dir?
+			// Wait, we run backend from root usually or backend dir.
+			// User runs `go run .` in `backend`. script is in `scripts`. root is `..`.
+			// So command should be `uv run scripts/fetch_data_mootdx.py` from root?
+			// Let's assume content root. If running from backend folder:
+			cmd.Dir = ".."
+			// Output capturing for debug
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("Error fetching data for %s: %v\nOutput: %s", symbol, err, string(out))
+			} else {
+				log.Printf("Successfully fetched data for %s", symbol)
+			}
+		}(req.Symbol)
+
+		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started", "symbol": req.Symbol})
+	})
 
 	r.GET("/api/dates", func(c *gin.Context) {
 		symbol := c.Query("symbol")

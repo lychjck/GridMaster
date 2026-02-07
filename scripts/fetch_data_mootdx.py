@@ -38,6 +38,15 @@ def init_db():
     c.execute(f'CREATE TABLE IF NOT EXISTS klines_5m {create_sql}')
     c.execute(f'CREATE TABLE IF NOT EXISTS klines_daily {create_sql}')
     
+    # Symbols Meta Table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS symbols (
+            symbol TEXT PRIMARY KEY,
+            name TEXT,
+            market INTEGER
+        )
+    ''')
+    
     # Create Unified View for Intraday (ignore daily)
     c.execute('DROP VIEW IF EXISTS klines_all')
     c.execute('''
@@ -197,23 +206,92 @@ def save_to_db(records, table_name):
     conn.close()
     print(f"Saved {len(records)} records to {table_name}.")
 
+def save_symbol_meta(symbol, market, name=None):
+    if not name:
+        name = symbol # Default to symbol if name not provided
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        c.execute('INSERT OR REPLACE INTO symbols (symbol, name, market) VALUES (?, ?, ?)', (symbol, name, market))
+        conn.commit()
+    except Exception as e:
+        print(f"Warning: Could not save symbol meta: {e}")
+    finally:
+        conn.close()
+
+def infer_market(symbol):
+    """
+    Infer market ID from symbol.
+    SH (1): 60xxxx, 68xxxx, 51xxxx (ETF SH), 58xxxx
+    SZ (0): 00xxxx, 30xxxx, 15xxxx (ETF SZ)
+    Default to 1 (SH) if unknown
+    """
+    if symbol.startswith(('60', '68', '51', '58')):
+        return 1
+    elif symbol.startswith(('00', '30', '15')):
+        return 0
+    return 1 # Fallback
+
+import urllib.request
+
+def get_stock_name(symbol, market):
+    """
+    Fetch stock name via Tencent Interface (qt.gtimg.cn)
+    market: 1=SH, 0=SZ
+    """
+    try:
+        prefix = "sh" if market == 1 else "sz"
+        url = f"http://qt.gtimg.cn/q={prefix}{symbol}"
+        with urllib.request.urlopen(url, timeout=3) as response:
+            data = response.read().decode('gbk') # Tensor returns GBK
+            # Format: v_sh512890="1~红利低波~..."
+            if data and '~' in data:
+                parts = data.split('~')
+                if len(parts) > 2:
+                    return parts[1]
+    except Exception as e:
+        print(f"Warning: Could not fetch name for {symbol}: {e}")
+    return symbol # Fallback
+
+def initialize_default_symbols():
+    defaults = [
+        ("512890", 1, "红利低波"),
+        ("510300", 1, "沪深300"),
+        ("159915", 0, "创业板指")
+    ]
+    for s, m, n in defaults:
+        save_symbol_meta(s, m, n)
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch Market Data via Mootdx (Smart Increment)")
     parser.add_argument("--symbols", type=str, default="512890,510300,510500", help="Comma separated symbols")
-    parser.add_argument("--market", type=str, default="1", help="Default Market ID (1=SH, 0=SZ)")
+    parser.add_argument("--market", type=int, default=-1, help="Market ID (1=SH, 0=SZ). -1=Auto-detect")
     parser.add_argument("--count", type=int, default=40000, help="Max records for safety limit")
     parser.add_argument("--force", action="store_true", help="Disable smart stitching and force fetch full count")
     args = parser.parse_args()
 
-    symbols = args.symbols.split(",")
-    market = int(args.market)
+    symbols_arg = args.symbols.split(",")
+    # market = int(args.market) # Remove static market
     count = args.count
 
     init_db()
+    initialize_default_symbols() # Ensure defaults exist
     
-    for symbol in symbols:
+    for symbol in symbols_arg:
         symbol = symbol.strip()
         if not symbol: continue
+        
+        # Auto detect market if not specified
+        market = args.market
+        if market == -1:
+            market = infer_market(symbol)
+        
+        # Fetch Name
+        name = get_stock_name(symbol, market)
+        
+        # Save Metadata first
+        save_symbol_meta(symbol, market, name)
         
         print(f"\n{'='*50}")
         print(f"Processing {symbol} (Market: {market}) via Mootdx backend...")

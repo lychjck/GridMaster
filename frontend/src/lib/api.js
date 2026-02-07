@@ -45,4 +45,14 @@ export const runSimulation = async (config) => {
     return response.data;
 };
 
+export const getSymbols = async () => {
+    const response = await api.get('/symbols');
+    return response.data.data;
+};
+
+export const addSymbol = async (symbol) => {
+    const response = await api.post('/symbols', { symbol });
+    return response.data;
+};
+
 export default api;

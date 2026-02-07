@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import VolatilityChart from './VolatilityChart';
-import { getKlines, getDailyKlines, getAvailableDates } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign } from 'lucide-react';
+import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol } from '../lib/api';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2 } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 
 const Dashboard = () => {
@@ -14,15 +14,82 @@ const Dashboard = () => {
 
     // Symbol State
     const [selectedSymbol, setSelectedSymbol] = useState('512890');
-    const supportedSymbols = [
-        { code: '512890', name: '红利低波', market: 'SH' },
-        { code: '510300', name: '沪深300', market: 'SH' },
-        { code: '159915', name: '创业板指', market: 'SZ' }
-    ];
+    const [supportedSymbols, setSupportedSymbols] = useState([]);
+    const [newSymbol, setNewSymbol] = useState('');
+    const [isAdding, setIsAdding] = useState(false);
+    const [addingLoading, setAddingLoading] = useState(false);
 
     const [gridStep, setGridStep] = useState(0.5);
     const [initialPrice, setInitialPrice] = useState('');
     const [stats, setStats] = useState({ volatility: 0, range: 0 });
+
+    // 0. Fetch Symbols
+    const fetchSymbols = async () => {
+        try {
+            const syms = await getSymbols();
+            if (syms && syms.length > 0) {
+                // Map API format to UI format
+                // API: {symbol, name, market}
+                const mapped = syms.map(s => ({
+                    code: s.symbol,
+                    name: s.name,
+                    market: s.market === 1 ? 'SH' : 'SZ'
+                }));
+                // Manually add default if database is empty initially, or just rely on DB
+                if (mapped.length === 0) {
+                    // Fallback defaults or empty
+                    setSupportedSymbols([
+                        { code: '512890', name: '红利低波', market: 'SH' },
+                        { code: '510300', name: '沪深300', market: 'SH' },
+                        { code: '159915', name: '创业板指', market: 'SZ' }
+                    ]);
+                } else {
+                    setSupportedSymbols(mapped);
+                }
+            } else {
+                // Fallback defaults
+                setSupportedSymbols([
+                    { code: '512890', name: '红利低波', market: 'SH' },
+                    { code: '510300', name: '沪深300', market: 'SH' },
+                    { code: '159915', name: '创业板指', market: 'SZ' }
+                ]);
+            }
+        } catch (e) {
+            console.error("Failed to fetch symbols", e);
+        }
+    };
+
+    const handleAddSymbol = async () => {
+        if (!newSymbol || newSymbol.length !== 6) {
+            alert("请输入6位股票代码");
+            return;
+        }
+        setAddingLoading(true);
+        try {
+            await addSymbol(newSymbol);
+            // Wait a bit for backend to start fetching, then start polling or just reload symbols
+            // Ideally we wait for fetch implementation result via SSE or just notify user "Started".
+            // Since backend returns "Accepted", we can assume it starts.
+            // But we want to select it when it's ready. 
+            // For now, let's just refresh list after a short delay or let user wait.
+            // A better UX: "Fetching..." then auto refresh.
+            // Let's optimize: reload symbols after 2 seconds.
+            setTimeout(async () => {
+                await fetchSymbols();
+                setSelectedSymbol(newSymbol);
+                setIsAdding(false);
+                setNewSymbol('');
+                setAddingLoading(false);
+            }, 2000);
+        } catch (e) {
+            alert("添加失败: " + e.message);
+            setAddingLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        fetchSymbols();
+    }, []);
 
     // 1. Initial Load: Just get available dates
     const initData = async () => {
@@ -106,7 +173,7 @@ const Dashboard = () => {
                             <TrendingUp className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold tracking-tight">网格交易分析</h1>
+                            <h1 className="text-xl font-bold tracking-tight">GridMaster</h1>
                             <div className="flex items-center gap-2 mt-1">
                                 <select
                                     value={selectedSymbol}
@@ -121,6 +188,46 @@ const Dashboard = () => {
                                         <option key={s.code} value={s.code}>{s.code} {s.name}</option>
                                     ))}
                                 </select>
+
+                                {/* Add Symbol Button */}
+                                {!isAdding ? (
+                                    <button
+                                        onClick={() => setIsAdding(true)}
+                                        className="text-white/40 hover:text-indigo-400 transition-colors"
+                                        title="添加新股票"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" />
+                                    </button>
+                                ) : (
+                                    <div className="flex items-center gap-1 animate-in slide-in-from-left-2 fade-in duration-200">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            placeholder="代码"
+                                            className="w-16 bg-black/40 border border-indigo-500/50 rounded px-1 py-0.5 text-xs text-white focus:outline-none font-mono"
+                                            value={newSymbol}
+                                            onChange={(e) => setNewSymbol(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleAddSymbol();
+                                                if (e.key === 'Escape') setIsAdding(false);
+                                            }}
+                                        />
+                                        <button
+                                            onClick={handleAddSymbol}
+                                            disabled={addingLoading}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-2 py-0.5 rounded transition-colors disabled:opacity-50"
+                                        >
+                                            {addingLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : '确定'}
+                                        </button>
+                                        <button
+                                            onClick={() => setIsAdding(false)}
+                                            className="text-white/40 hover:text-white text-[10px] px-1"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                )}
+
                             </div>
                         </div>
                     </div>
