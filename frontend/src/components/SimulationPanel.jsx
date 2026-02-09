@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { runSimulation } from '../lib/api';
-import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar } from 'lucide-react';
+import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar, ChevronDown } from 'lucide-react';
 import TradeChart from './TradeChart';
+import CyberDatePicker from './CyberDatePicker';
 
 const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const [config, setConfig] = useState(() => {
         const saved = localStorage.getItem('sim_config');
         return saved ? JSON.parse(saved) : {
-            startDate: availableDates[0] || '2026-01-01',
+            startDate: availableDates.length > 0 ? availableDates[availableDates.length - 1] : '2026-01-01',
             basePrice: initialBasePrice || 1.100,
             gridStep: 0.005,
-            gridStepType: 'absolute', // 'percent' | 'absolute'
+            gridStepType: 'percent', // 默认改用百分比，更符合常用直觉
             amountPerGrid: 2000,
             commissionRate: 0.0001, // 万1
             minCommission: 0.2,
@@ -18,24 +19,44 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
         };
     });
 
-    const [result, setResult] = useState(() => {
-        const saved = localStorage.getItem('sim_result');
-        return saved ? JSON.parse(saved) : null;
-    });
+    const [result, setResult] = useState(null);
 
     const [loading, setLoading] = useState(false);
     const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart'
+    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+    const hasAutoSyncedDate = React.useRef(false);
 
-    // Sync state to localStorage
+    // Initial buildup/cleanup
     React.useEffect(() => {
-        localStorage.setItem('sim_config', JSON.stringify(config));
+        try {
+            localStorage.removeItem('sim_result');
+        } catch (e) { }
+    }, []);
+
+    React.useEffect(() => {
+        if (config) {
+            try {
+                localStorage.setItem('sim_config', JSON.stringify(config));
+            } catch (e) {
+                console.warn("Failed to save sim_config to localStorage", e);
+            }
+        }
     }, [config]);
 
+    // Important: Update default date when availableDates changes
     React.useEffect(() => {
-        if (result) {
-            localStorage.setItem('sim_result', JSON.stringify(result));
+        if (availableDates.length > 0 && !hasAutoSyncedDate.current) {
+            const latestDate = availableDates[availableDates.length - 1];
+            // If current startDate is not the latest one, force it to the latest on first load
+            if (config.startDate !== latestDate) {
+                setConfig(prev => ({
+                    ...prev,
+                    startDate: latestDate
+                }));
+            }
+            hasAutoSyncedDate.current = true;
         }
-    }, [result]);
+    }, [availableDates, config.startDate]);
 
     const handleSimulate = async () => {
         setLoading(true);
@@ -72,13 +93,32 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-6">
                     <div className="flex flex-col gap-2">
                         <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">开始日期</label>
-                        <select
-                            className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                            value={config.startDate}
-                            onChange={e => setConfig({ ...config, startDate: e.target.value })}
-                        >
-                            {availableDates.map(d => <option key={d} value={d} className="bg-slate-900">{d}</option>)}
-                        </select>
+                        <div className="relative">
+                            <button
+                                onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                                className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            >
+                                <span className="font-mono">{config.startDate || '选择日期'}</span>
+                                <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isDatePickerOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setIsDatePickerOpen(false)}></div>
+                                    <div className="absolute top-full left-0 mt-2 glass-panel rounded-xl shadow-2xl shadow-black/50 overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                                        <CyberDatePicker
+                                            selectedDate={config.startDate}
+                                            availableDates={availableDates}
+                                            onSelect={(date) => {
+                                                setConfig({ ...config, startDate: date });
+                                                setIsDatePickerOpen(false);
+                                            }}
+                                            onClose={() => setIsDatePickerOpen(false)}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
