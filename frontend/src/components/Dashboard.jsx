@@ -36,6 +36,7 @@ const Dashboard = () => {
     const [stats, setStats] = useState({ volatility: 0, range: 0, spread: 0 });
     const [simulatedTrades, setSimulatedTrades] = useState([]);
     const [showLiveTrades, setShowLiveTrades] = useState(false);
+    const [preClose, setPreClose] = useState(null);
 
     // UI Tab State
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
@@ -130,6 +131,27 @@ const Dashboard = () => {
             setData(klines);
             setCurrentDayInfo(dailies.length > 0 ? dailies[0] : null);
 
+            // Fetch Pre-Close (Yesterday's Close)
+            let preCloseVal = null;
+            if (availableDates.length > 0) {
+                const idx = availableDates.indexOf(selectedDate);
+                if (idx > 0) {
+                    const prevDate = availableDates[idx - 1];
+                    try {
+                        const prevDailies = await getDailyKlines(prevDate, selectedSymbol);
+                        if (prevDailies.length > 0) {
+                            preCloseVal = prevDailies[0].close;
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch pre-close", e);
+                    }
+                } else if (dailies.length > 0 && dailies[0].pre_close) {
+                    // Fallback to pre_close field from current day record if provided by backend
+                    preCloseVal = dailies[0].pre_close;
+                }
+            }
+            setPreClose(preCloseVal);
+
             if (klines.length > 0 && !initialPrice) {
                 setInitialPrice(klines[0].open.toFixed(3));
             }
@@ -148,7 +170,7 @@ const Dashboard = () => {
         // 移除自动刷新，避免干扰用户分析
         // const interval = setInterval(fetchData, 60000);
         // return () => clearInterval(interval);
-    }, [selectedDate, selectedSymbol]);
+    }, [selectedDate, selectedSymbol, availableDates]);
 
     // Sync state to localStorage
     useEffect(() => { localStorage.setItem('selectedSymbol', selectedSymbol); }, [selectedSymbol]);
@@ -618,6 +640,7 @@ const Dashboard = () => {
                                         gridStepUnit={gridStepUnit}
                                         initialPrice={initialPrice}
                                         tradePoints={showLiveTrades ? simulatedTrades : []}
+                                        preClose={preClose}
                                     />
                                 </div>
                             </div>

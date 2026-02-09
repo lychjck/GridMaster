@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, tradePoints = [] }) => {
+const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, tradePoints = [], preClose }) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
 
@@ -76,6 +76,8 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
         // Use synthesized arrays for rendering
         const allPrices = [...chartPrices, dayOpen, dayClose];
+        if (preClose) allPrices.push(preClose);
+
         const prices = chartPrices;
         const dates = chartDates;
         const volumes = chartVolumes;
@@ -173,6 +175,18 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     const diffPct = (diff / item.open) * 100;
                     const sign = diff >= 0 ? '+' : '';
 
+                    // Calculate Change relative to PreClose (Real Change)
+                    let preCloseHtml = '';
+                    if (preClose) {
+                        const realDiff = item.close - preClose;
+                        const realPct = (realDiff / preClose) * 100;
+                        const realColor = realDiff >= 0 ? '#ef4444' : '#22c55e';
+                        const realSign = realDiff >= 0 ? '+' : '';
+                        preCloseHtml = `
+                            <span style="color:#888">涨幅:</span> <span style="text-align:right; font-family:monospace; color:${realColor}">${realSign}${realPct.toFixed(2)}%</span>
+                        `;
+                    }
+
                     // Trade HTML Logic
                     const dataIndex = index - (hasSynthesizedStart ? 1 : 0);
                     const tradesAtThisPoint = tradePoints.filter(t => t.index === dataIndex);
@@ -203,7 +217,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                                 <span style="color:#888">最高:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${item.high.toFixed(3)}</span>
                                 <span style="color:#888">最低:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${item.low.toFixed(3)}</span>
                                 <span style="color:#888">收盘:</span> <span style="text-align:right; font-family:monospace; color:${colorPrice}">${item.close.toFixed(3)}</span>
-                                <span style="color:#888">涨跌:</span> <span style="text-align:right; font-family:monospace; color:${colorPrice}">${sign}${diffPct.toFixed(2)}%</span>
+                                ${preCloseHtml}
                                 <span style="color:#888">成交:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${(volVal || 0).toLocaleString()}</span>
                             </div>
                             ${tradeHtml}
@@ -217,13 +231,13 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
             grid: [
                 {
                     left: '50', // Fixed left margin for price axis labels
-                    right: '60', // More space for labels
+                    right: '80', // More space for labels
                     top: '30',
                     height: '60%'
                 },
                 {
                     left: '50',
-                    right: '60',
+                    right: '80',
                     top: '75%',
                     height: '15%'
                 }
@@ -426,7 +440,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, 0], // 与紫线在同一水平
+                        offset: [2, 0], // 保持水平间距，垂直对齐
                         fontSize: 11
                     },
                     z: 5
@@ -490,6 +504,26 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                 },
                 // Reference Lines as Real Series for perfect alignment
                 {
+                    name: '昨收价',
+                    type: 'line',
+                    data: prices.map(() => preClose || '-'),
+                    showSymbol: false,
+                    // Only show if preClose is valid and reasonably close to prices to avoid scale issues
+                    lineStyle: { color: '#999', width: 1.5, type: 'dashed', opacity: preClose ? 0.6 : 0 },
+                    label: { show: false },
+                    endLabel: {
+                        show: !!preClose,
+                        formatter: `昨收: ${preClose ? preClose.toFixed(3) : ''}`,
+                        color: '#bbb',
+                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        offset: [2, 0], // 归零垂直偏移，实现对齐
+                        fontSize: 11
+                    },
+                    z: 4
+                },
+                {
                     name: '开盘价',
                     type: 'line',
                     data: prices.map(() => dayOpen),
@@ -503,7 +537,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, 22], // 移至第二层
+                        offset: [2, 0],
                         fontSize: 11
                     },
                     z: 5
@@ -522,7 +556,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
                         borderRadius: 2,
-                        offset: [-10, 44], // 移至第三层
+                        offset: [2, 0],
                         fontSize: 11
                     },
                     z: 5
