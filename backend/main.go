@@ -116,6 +116,32 @@ func main() {
 		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started", "symbol": req.Symbol})
 	})
 
+	// POST /api/refresh - Trigger manual data refresh
+	r.POST("/api/refresh", func(c *gin.Context) {
+		var req AddSymbolRequest // Reuse struct or create new one if needed only for symbol
+		// If reusing, json key is "symbol".
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		go func(symbol string) {
+			// Reuse the same script logic
+			// Using --force is NOT recommended for refresh as we want incremental.
+			// So just call it normally, it has smart stitching.
+			cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", symbol, "--count", "800")
+			cmd.Dir = ".."
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("Error refreshing data for %s: %v\nOutput: %s", symbol, err, string(out))
+			} else {
+				log.Printf("Successfully refreshed data for %s", symbol)
+			}
+		}(req.Symbol)
+
+		c.JSON(http.StatusOK, gin.H{"message": "Refresh started", "symbol": req.Symbol})
+	})
+
 	r.GET("/api/dates", func(c *gin.Context) {
 		symbol := c.Query("symbol")
 		var dates []string

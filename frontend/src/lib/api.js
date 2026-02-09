@@ -35,7 +35,9 @@ export const getDailyKlines = async (dateStr = '', symbol = '') => {
 };
 
 export const getAvailableDates = async (symbol = '') => {
-    const url = symbol ? `/dates?symbol=${symbol}` : '/dates';
+    const url = symbol
+        ? `/dates?symbol=${symbol}&_t=${Date.now()}`
+        : `/dates?_t=${Date.now()}`;
     const response = await api.get(url);
     return response.data.data;
 };
@@ -52,6 +54,11 @@ export const getSymbols = async () => {
 
 export const addSymbol = async (symbol) => {
     const response = await api.post('/symbols', { symbol });
+    return response.data;
+};
+
+export const refreshData = async (symbol) => {
+    const response = await api.post('/refresh', { symbol });
     return response.data;
 };
 

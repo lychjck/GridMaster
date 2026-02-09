@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
-import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation } from '../lib/api';
+import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation, refreshData } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2 } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
@@ -253,6 +253,38 @@ const Dashboard = () => {
         setSimulatedTrades([]);
     };
 
+    const handleRefresh = async () => {
+        setLoading(true);
+        try {
+            await refreshData(selectedSymbol);
+            // Wait a bit for backend script to finish (though it's async, we just ack start)
+            // Ideally backend should wait but we made it async. 
+            // Let's polling or just wait fixed time to allow script some headstart
+            setTimeout(async () => {
+                // Refresh available dates and switch to latest
+                try {
+                    const dates = await getAvailableDates(selectedSymbol);
+                    setAvailableDates(dates);
+                    if (dates.length > 0) {
+                        const latest = dates[dates.length - 1];
+                        if (latest !== selectedDate) {
+                            setSelectedDate(latest);
+                        } else {
+                            // If date explains same, just fetch data
+                            fetchData();
+                        }
+                    }
+                } catch (err) {
+                    console.error("Refresh dates failed", err);
+                }
+            }, 2000);
+        } catch (e) {
+            console.error("Refresh failed", e);
+            alert("刷新失败: " + e.message);
+            setLoading(false);
+        }
+    };
+
     // Derived State for Switcher
     const currentSymbolObj = supportedSymbols.find(s => s.code === selectedSymbol);
     const currentSymbolName = currentSymbolObj?.name || selectedSymbol;
@@ -406,9 +438,10 @@ const Dashboard = () => {
                     </div>
 
                     <button
-                        onClick={fetchData}
+                        onClick={handleRefresh}
                         className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-indigo-400 hover:text-indigo-300 transition-all active:scale-95 duration-200 group relative overflow-hidden"
                         title="刷新数据"
+                        disabled={loading}
                     >
                         <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
                     </button>
