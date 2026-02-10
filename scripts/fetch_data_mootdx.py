@@ -133,8 +133,9 @@ def fetch_data_mootdx(symbol, market, frequency, count=800, since_ts="1970-01-01
             
             if chunk_oldest_str <= since_ts:
                 print(f"  [Smart Stitching] Found overlap: Chunk oldest {chunk_oldest_str} <= DB latest {since_ts}.")
-                # Filter this chunk to only keep new data
-                df_filtered = df[df.index.map(lambda x: x.strftime(ts_format)) > since_ts]
+                # Filter this chunk to only keep new data OR update existing latest record
+                # Changed > to >= to allow updating the latest record (e.g. today's daily bar which changes throughout the day)
+                df_filtered = df[df.index.map(lambda x: x.strftime(ts_format)) >= since_ts]
                 
                 if not df_filtered.empty:
                     all_df.append(df_filtered)
@@ -263,16 +264,37 @@ def initialize_default_symbols():
     for s, m, n in defaults:
         save_symbol_meta(s, m, n)
 
+from datetime import datetime, timedelta
+
+def get_adjusted_timestamp(symbol, table_name, lookback_days=0):
+    """
+    Get the latest timestamp and subtract N days to allow 'healing' of recent data.
+    """
+    latest = get_latest_timestamp(symbol, table_name)
+    if latest == "1970-01-01 00:00:00" or latest == "1970-01-01":
+        return latest
+    
+    try:
+        # Detect format
+        fmt = '%Y-%m-%d %H:%M' if ' ' in latest else '%Y-%m-%d'
+        dt = datetime.strptime(latest, fmt)
+        if lookback_days > 0:
+            dt = dt - timedelta(days=lookback_days)
+        return dt.strftime(fmt)
+    except Exception as e:
+        print(f"Warning: Could not adjust timestamp {latest}: {e}")
+        return latest
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch Market Data via Mootdx (Smart Increment)")
     parser.add_argument("--symbols", type=str, default="512890,510300,510500", help="Comma separated symbols")
     parser.add_argument("--market", type=int, default=-1, help="Market ID (1=SH, 0=SZ). -1=Auto-detect")
     parser.add_argument("--count", type=int, default=40000, help="Max records for safety limit")
     parser.add_argument("--force", action="store_true", help="Disable smart stitching and force fetch full count")
+    parser.add_argument("--lookback", type=int, default=0, help="Days to look back and re-sync for intraday data")
     args = parser.parse_args()
 
     symbols_arg = args.symbols.split(",")
-    # market = int(args.market) # Remove static market
     count = args.count
 
     init_db()
@@ -299,19 +321,20 @@ def main():
 
         # Fetch 1 min data (freq=8)
         table_1m = "klines_1m"
-        latest_1m = "1970-01-01 00:00:00" if args.force else get_latest_timestamp(symbol, table_1m)
+        latest_1m = "1970-01-01 00:00:00" if args.force else get_adjusted_timestamp(symbol, table_1m, args.lookback)
         records_1m = fetch_data_mootdx(symbol, market, 8, count, since_ts=latest_1m)
         save_to_db(records_1m, table_1m)
 
         # Fetch 5 min data (freq=0)
         table_5m = "klines_5m"
-        latest_5m = "1970-01-01 00:00:00" if args.force else get_latest_timestamp(symbol, table_5m)
+        latest_5m = "1970-01-01 00:00:00" if args.force else get_adjusted_timestamp(symbol, table_5m, args.lookback)
         records_5m = fetch_data_mootdx(symbol, market, 0, count, since_ts=latest_5m)
         save_to_db(records_5m, table_5m)
 
         # Fetch Daily data (freq=9)
+        # Default 7 days lookback for daily bars to ensure historical errors are fixed
         table_day = "klines_daily"
-        latest_day = "1970-01-01" if args.force else get_latest_timestamp(symbol, table_day)
+        latest_day = "1970-01-01" if args.force else get_adjusted_timestamp(symbol, table_day, max(7, args.lookback))
         records_day = fetch_data_mootdx(symbol, market, 9, count, since_ts=latest_day)
         save_to_db(records_day, table_day)
         

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, tradePoints = [], preClose }) => {
+const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, tradePoints = [], preClose, isLive }) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
 
@@ -41,13 +41,20 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
     const getOption = () => {
         if (!data || data.length === 0) return {};
 
-        // Use dailyInfo if available (authoritative), else fallback to first/last minute (approx)
-        const rawOpen = dailyInfo ? dailyInfo.open : data[0].open;
-        const rawClose = dailyInfo ? dailyInfo.close : data[data.length - 1].close;
+        // Robust extraction of Open/Close prices with cross-source fallback
+        const getValidOpen = () => {
+            const fromData = data.length > 0 ? parseFloat(data[0].open) : 0;
+            const fromDaily = dailyInfo ? parseFloat(dailyInfo.open) : 0;
+            return fromData > 0 ? fromData : (fromDaily > 0 ? fromDaily : fromData);
+        };
+        const getValidClose = () => {
+            const fromData = data.length > 0 ? parseFloat(data[data.length - 1].close) : 0;
+            const fromDaily = dailyInfo ? parseFloat(dailyInfo.close) : 0;
+            return fromData > 0 ? fromData : (fromDaily > 0 ? fromDaily : fromData);
+        };
 
-        // Force Number type to avoid ECharts axis mismatch or string quoting
-        const dayOpen = parseFloat(rawOpen);
-        const dayClose = parseFloat(rawClose);
+        const dayOpen = getValidOpen();
+        const dayClose = getValidClose();
 
         // Synthesize 09:30 data point if missing (common in minute data starting at 09:31)
         // This ensures the chart looks "connected" from the open.
@@ -551,7 +558,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     label: { show: false },
                     endLabel: {
                         show: true,
-                        formatter: `收盘: ${dayClose.toFixed(3)}`,
+                        formatter: `${isLive ? '现价' : '收盘'}: ${dayClose.toFixed(3)}`,
                         color: '#38bdf8',
                         backgroundColor: 'rgba(0, 0, 0, 0.6)',
                         padding: [2, 4],
