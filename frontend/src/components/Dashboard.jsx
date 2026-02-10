@@ -566,8 +566,12 @@ const Dashboard = () => {
                                     onClick={handleRunSimulation}
                                     className="flex-1 flex items-center justify-center gap-2 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 group"
                                 >
-                                    <Play className="w-3.5 h-3.5 fill-current group-hover:scale-110 transition-transform" />
-                                    模拟成交
+                                    {loading ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                        <Play className="w-3.5 h-3.5 fill-current group-hover:scale-110 transition-transform" />
+                                    )}
+                                    {loading ? '模拟中...' : '模拟成交'}
                                 </button>
                                 <button
                                     onClick={handleClearSimulation}

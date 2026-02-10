@@ -69,29 +69,41 @@ func runSimulation(c *gin.Context) {
 		config.AmountPerGrid = 100
 	} // Default 100 shares
 
-	// 1. Fetch Data
-	// 1. Smart Data Selection
-	// Check if we have 1m data covering the requested StartDate
-	var first1m Kline
-	has1m := false
-	if err := DB.Table("klines_1m").Where("symbol = ?", config.Symbol).Order("timestamp asc").First(&first1m).Error; err == nil {
-		if first1m.Timestamp <= config.StartDate {
-			has1m = true
-		}
-	}
-
-	var klines []Kline
-	usedTable := "klines_1m" // default
-
-	if !has1m {
-		// Fallback to 5m
-		usedTable = "klines_5m"
-	}
-
-	if err := DB.Table(usedTable).Where("symbol = ?", config.Symbol).Where("timestamp >= ?", config.StartDate).Order("timestamp asc").Find(&klines).Error; err != nil {
+	// 1. Fetch Data (Hybrid 1m/5m approach to ensure coverage)
+	var klines1m, klines5m []Kline
+	if err := DB.Table("klines_1m").Where("symbol = ?", config.Symbol).Where("timestamp >= ?", config.StartDate).Order("timestamp asc").Find(&klines1m).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := DB.Table("klines_5m").Where("symbol = ?", config.Symbol).Where("timestamp >= ?", config.StartDate).Order("timestamp asc").Find(&klines5m).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Identification of dates that have 1m data
+	datesWith1m := make(map[string]bool)
+	for _, k := range klines1m {
+		if len(k.Timestamp) >= 10 {
+			datesWith1m[k.Timestamp[:10]] = true
+		}
+	}
+
+	// Merge: Use 1m if available, otherwise 5m
+	var klines []Kline
+	klines = append(klines, klines1m...)
+	for _, k := range klines5m {
+		if len(k.Timestamp) >= 10 {
+			date := k.Timestamp[:10]
+			if _, has1m := datesWith1m[date]; !has1m {
+				klines = append(klines, k)
+			}
+		}
+	}
+
+	// Sort by timestamp
+	sort.Slice(klines, func(i, j int) bool {
+		return klines[i].Timestamp < klines[j].Timestamp
+	})
 
 	if len(klines) == 0 {
 		c.JSON(http.StatusOK, SimResult{})
