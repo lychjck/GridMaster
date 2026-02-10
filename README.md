@@ -2,6 +2,8 @@
 
 Designed to assist in grid trading strategies for "Dividend Low Volatility" assets (e.g., 512890 ETF).
 
+[Feature Roadmap](./ROADMAP.md)
+
 ## Features
 - **Data Acquisition**: Python scripts to fetch minute-level market data.
 - **Backend API**: Go (Gin) server providing robust data endpoints and SQLite management.
