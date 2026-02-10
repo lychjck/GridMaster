@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { runSimulation } from '../lib/api';
-import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar, ChevronDown } from 'lucide-react';
+import { runSimulation, getDailyKlines } from '../lib/api';
+import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar, ChevronDown, MoveHorizontal } from 'lucide-react';
 import TradeChart from './TradeChart';
 import CyberDatePicker from './CyberDatePicker';
 
@@ -58,6 +58,30 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
         }
     }, [availableDates, config.startDate]);
 
+    // Fetch and set opening price as base price when date or symbol changes
+    React.useEffect(() => {
+        if (!config.startDate || !symbol) return;
+
+        const fetchOpeningPrice = async () => {
+            try {
+                const dailies = await getDailyKlines(config.startDate, symbol);
+                if (dailies && dailies.length > 0) {
+                    const openPrice = dailies[0].open;
+                    if (openPrice) {
+                        setConfig(prev => ({
+                            ...prev,
+                            basePrice: openPrice.toFixed(3)
+                        }));
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch opening price:", err);
+            }
+        };
+
+        fetchOpeningPrice();
+    }, [config.startDate, symbol]);
+
     const handleSimulate = async () => {
         setLoading(true);
         try {
@@ -84,7 +108,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     return (
         <div className="flex flex-col gap-6 h-full pb-12">
             {/* Control Bar */}
-            <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl shrink-0">
+            <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl shrink-0 relative z-30">
                 <div className="flex items-center gap-2 text-indigo-400 font-semibold border-b border-white/5 pb-4 mb-6">
                     <Calculator className="w-5 h-5" />
                     <span className="text-lg">网格交易策略回测</span>
@@ -217,8 +241,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
             {/* Results Area */}
             {result && (
                 <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
                         <StatCard icon={<DollarSign />} label="总净收益" value={(result.totalProfit || 0).toFixed(2)} unit="CNY" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} />
+                        <StatCard icon={<MoveHorizontal />} label="持仓变动" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
                         <StatCard icon={<RefreshCw />} label="总成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
                         <StatCard icon={<TrendingUp />} label="总佣金成本" value={(result.totalComm || 0).toFixed(2)} unit="CNY" color="text-amber-400" />
                     </div>

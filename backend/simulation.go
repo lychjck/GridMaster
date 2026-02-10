@@ -42,6 +42,7 @@ type SimResult struct {
 	TotalProfit float64     `json:"totalProfit"`
 	TotalTx     int         `json:"totalTx"`
 	TotalComm   float64     `json:"totalComm"`
+	NetPosition float64     `json:"netPosition"`
 	DailyStats  []DailyStat `json:"dailyStats"`
 	Trades      []Trade     `json:"trades"`
 	ChartData   []Kline     `json:"chartData"`
@@ -276,6 +277,7 @@ func runSimulation(c *gin.Context) {
 
 	// Aggregate
 	var sortedStats []DailyStat
+	var totalBuyCount, totalSellCount int
 	for _, s := range dailyStatsMap {
 		s.NetProfit = RoundTo3(s.GrossProfit - s.Commission)
 		s.GrossProfit = RoundTo3(s.GrossProfit)
@@ -285,7 +287,10 @@ func runSimulation(c *gin.Context) {
 		result.TotalProfit += s.NetProfit
 		result.TotalTx += (s.BuyCount + s.SellCount)
 		result.TotalComm += s.Commission
+		totalBuyCount += s.BuyCount
+		totalSellCount += s.SellCount
 	}
+	result.NetPosition = float64(totalBuyCount-totalSellCount) * config.AmountPerGrid
 	result.TotalProfit = RoundTo3(result.TotalProfit)
 	result.TotalComm = RoundTo3(result.TotalComm)
 
