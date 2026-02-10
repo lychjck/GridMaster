@@ -643,6 +643,7 @@ const Dashboard = () => {
                                         gridStep={gridStep}
                                         gridStepUnit={gridStepUnit}
                                         initialPrice={initialPrice}
+                                        onBaselineChange={setInitialPrice}
                                         tradePoints={showLiveTrades ? simulatedTrades : []}
                                         preClose={preClose}
                                         isLive={selectedDate === new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')}

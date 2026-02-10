@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, tradePoints = [], preClose, isLive }) => {
+const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive }) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
+    const isDraggingRef = useRef(false);
+    const dragPriceRef = useRef(null);
 
     const onChartClick = (params) => {
         // console.log("Chart clicked:", params.componentType, params.seriesName, "dataIndex:", params.dataIndex, "data:", params.data);
@@ -37,6 +39,133 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
     const onEvents = {
         'click': onChartClick
     };
+
+    // === Draggable Baseline via ECharts Graphic Layer ===
+    const updateBaselineGraphic = useCallback(() => {
+        const chart = chartRef.current?.getEchartsInstance();
+        if (!chart || !initialPrice || !data || data.length === 0) return;
+
+        const price = dragPriceRef.current ?? parseFloat(initialPrice);
+        if (isNaN(price)) return;
+
+        // Convert price to pixel Y coordinate
+        const pixelY = chart.convertToPixel({ yAxisIndex: 0 }, price);
+        if (pixelY == null || isNaN(pixelY)) return;
+
+        const grid = chart.getModel().getComponent('grid', 0);
+        if (!grid) return;
+        const gridRect = grid.coordinateSystem.getRect();
+
+        chart.setOption({
+            graphic: [{
+                type: 'group',
+                id: 'baseline-drag',
+                x: gridRect.x,
+                y: pixelY,
+                draggable: 'vertical',
+                z: 100,
+                cursor: 'ns-resize',
+                ondragstart: function () {
+                    isDraggingRef.current = true;
+                },
+                ondrag: function () {
+                    const newY = this.y;
+                    const newPrice = chart.convertFromPixel({ yAxisIndex: 0 }, newY);
+                    if (newPrice != null && !isNaN(newPrice) && newPrice > 0) {
+                        dragPriceRef.current = newPrice;
+                        // Update label text during drag
+                        chart.setOption({
+                            graphic: [{
+                                id: 'baseline-drag',
+                                children: [{}, {
+                                    style: {
+                                        text: `⇕ 基准: ${newPrice.toFixed(3)}`
+                                    }
+                                }]
+                            }]
+                        }, { lazyUpdate: true });
+                    }
+                },
+                ondragend: function () {
+                    isDraggingRef.current = false;
+                    const finalY = this.y;
+                    const finalPrice = chart.convertFromPixel({ yAxisIndex: 0 }, finalY);
+                    if (finalPrice != null && !isNaN(finalPrice) && finalPrice > 0 && onBaselineChange) {
+                        dragPriceRef.current = null;
+                        onBaselineChange(finalPrice.toFixed(3));
+                    }
+                },
+                children: [
+                    {
+                        // Purple dashed baseline line
+                        type: 'line',
+                        shape: {
+                            x1: 0,
+                            y1: 0,
+                            x2: gridRect.width,
+                            y2: 0
+                        },
+                        style: {
+                            stroke: '#a855f7',
+                            lineWidth: 2,
+                            lineDash: [6, 4],
+                            opacity: 0.8
+                        },
+                        silent: true
+                    },
+                    {
+                        // Drag label on the right
+                        type: 'text',
+                        left: gridRect.width + 4,
+                        top: -10,
+                        style: {
+                            text: `⇕ 基准: ${price.toFixed(3)}`,
+                            fill: '#fff',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            backgroundColor: '#7c3aed',
+                            padding: [4, 8],
+                            borderRadius: 4,
+                            shadowBlur: 6,
+                            shadowColor: 'rgba(124, 58, 237, 0.5)'
+                        }
+                    }
+                ]
+            }]
+        });
+    }, [initialPrice, data, onBaselineChange]);
+
+    // Sync graphic position when chart is ready or initialPrice changes
+    useEffect(() => {
+        // Small delay to ensure chart has rendered
+        const timer = setTimeout(() => {
+            dragPriceRef.current = null;
+            updateBaselineGraphic();
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [initialPrice, data, updateBaselineGraphic]);
+
+    // Listen to dataZoom and resize to reposition the drag handle
+    useEffect(() => {
+        const chart = chartRef.current?.getEchartsInstance();
+        if (!chart) return;
+
+        const handleReposition = () => {
+            if (!isDraggingRef.current) {
+                updateBaselineGraphic();
+            }
+        };
+
+        chart.on('dataZoom', handleReposition);
+        chart.on('restore', handleReposition);
+        window.addEventListener('resize', handleReposition);
+
+        return () => {
+            chart.off('dataZoom', handleReposition);
+            chart.off('restore', handleReposition);
+            window.removeEventListener('resize', handleReposition);
+        };
+    }, [updateBaselineGraphic]);
 
     const getOption = () => {
         if (!data || data.length === 0) return {};
@@ -432,26 +561,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     },
                     z: 20
                 },
-                // Grid Baseline
-                initialPrice && {
-                    name: '网格基准',
-                    type: 'line',
-                    data: prices.map(() => parseFloat(initialPrice)),
-                    showSymbol: false,
-                    lineStyle: { color: '#a855f7', width: 2, type: 'dashed', opacity: 0.8 },
-                    label: { show: false },
-                    endLabel: {
-                        show: true,
-                        formatter: `基准: ${parseFloat(initialPrice).toFixed(3)}`,
-                        color: '#a855f7',
-                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                        padding: [2, 4],
-                        borderRadius: 2,
-                        offset: [2, 0], // 保持水平间距，垂直对齐
-                        fontSize: 11
-                    },
-                    z: 5
-                },
+                // Grid Baseline is now rendered entirely via graphic layer (see updateBaselineGraphic)
                 // Highlighted K-Lines for Trades (Robust Implementation)
                 {
                     name: '成交K线',
