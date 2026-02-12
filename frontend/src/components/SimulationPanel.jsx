@@ -248,6 +248,43 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                         <StatCard icon={<TrendingUp />} label="总佣金成本" value={(result.totalComm || 0).toFixed(2)} unit="CNY" color="text-amber-400" />
                     </div>
 
+                    {/* Advanced Metrics Row */}
+                    {/* Advanced Metrics Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
+                        <StatCard
+                            icon={<TrendingUp className="rotate-180" />}
+                            label="最大回撤 (Max Drawdown)"
+                            value={(result.maxDrawdown || 0).toFixed(2)}
+                            unit="%"
+                            color="text-rose-400"
+                            tooltip="账户权益从最高点到底部的最大跌幅，衡量策略在最坏情况下的风险承受能力。"
+                        />
+                        <StatCard
+                            icon={<Calculator />}
+                            label="夏普比率 (Sharpe)"
+                            value={(result.sharpeRatio || 0).toFixed(2)}
+                            unit=""
+                            color="text-violet-400"
+                            tooltip="衡量每承受一单位总风险所产生的超额回报。比率越高，策略的风险调整后收益越好 (假设无风险利率为0)。"
+                        />
+                        <StatCard
+                            icon={<TrendingUp />}
+                            label="年化收益 (CAGR)"
+                            value={(result.cagr || 0).toFixed(2)}
+                            unit="%"
+                            color={(result.cagr || 0) >= 0 ? "text-emerald-400" : "text-slate-400"}
+                            tooltip="复合年均增长率，将当前的总收益转化为按年计算的平滑增长率，便于横向对比。"
+                        />
+                        <StatCard
+                            icon={<List />}
+                            label="标的涨幅 (Benchmark)"
+                            value={(result.benchmarkReturn || 0).toFixed(2)}
+                            unit="%"
+                            color={(result.benchmarkReturn || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+                            tooltip="所选时间段内，资产本身（如ETF）的价格变化幅度。用于对比网格策略是否跑赢了直接持仓。"
+                        />
+                    </div>
+
                     <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
                         <div className="px-6 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
                             <div className="flex gap-4">
@@ -356,16 +393,35 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     );
 };
 
-const StatCard = ({ icon, label, value, unit, color }) => (
-    <div className="bg-slate-800/50 backdrop-blur-md rounded-2xl p-6 border border-white/10 relative overflow-hidden group">
-        <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-            {React.cloneElement(icon, { className: "w-24 h-24" })}
+const StatCard = ({ icon, label, value, unit, color, tooltip }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+
+    return (
+        <div
+            className="bg-slate-800/50 backdrop-blur-md rounded-2xl p-6 border border-white/10 relative overflow-hidden group cursor-pointer transition-all hover:bg-slate-800/70 active:scale-95"
+            onClick={() => setShowTooltip(!showTooltip)}
+            title="点击查看说明"
+        >
+            <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                {React.cloneElement(icon, { className: "w-24 h-24" })}
+            </div>
+            <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1">
+                {label}
+                {tooltip && <span className="text-xs opacity-50 ml-1">(?)</span>}
+            </p>
+            <div className={`text-4xl font-bold font-mono tracking-tight ${color}`}>
+                {value} <span className="text-lg text-slate-500 font-normal">{unit}</span>
+            </div>
+
+            {showTooltip && tooltip && (
+                <div className="absolute inset-0 bg-slate-900/95 backdrop-blur-xl p-4 flex items-center justify-center text-center z-10 animate-in fade-in zoom-in duration-200">
+                    <p className="text-sm text-slate-300 leading-relaxed font-medium">
+                        {tooltip}
+                    </p>
+                </div>
+            )}
         </div>
-        <p className="text-slate-400 text-sm font-medium mb-1">{label}</p>
-        <div className={`text-4xl font-bold font-mono tracking-tight ${color}`}>
-            {value} <span className="text-lg text-slate-500 font-normal">{unit}</span>
-        </div>
-    </div>
-);
+    );
+};
 
 export default SimulationPanel;
