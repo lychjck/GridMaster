@@ -18,6 +18,7 @@ type SimConfig struct {
 	CommissionRate float64 `json:"commissionRate"` // e.g. 0.0002
 	MinCommission  float64 `json:"minCommission"`  // e.g. 0.2
 	AmountPerGrid  float64 `json:"amountPerGrid"`  // Default 100 shares
+	InitialShares  int64   `json:"initialShares"`  // Base Position
 	UsePenetration bool    `json:"usePenetration"` // New: Strict penetration mode
 }
 
@@ -27,6 +28,7 @@ type DailyStat struct {
 	SellCount   int     `json:"sellCount"`
 	GrossProfit float64 `json:"grossProfit"` // Realized profit
 	Commission  float64 `json:"commission"`
+	Value       float64 `json:"value"` // Market Value of Position (Initial + Net)
 	NetProfit   float64 `json:"netProfit"`
 	ClosePrice  float64 `json:"closePrice"`
 	NetValue    float64 `json:"netValue"` // Daily Net Asset Value (Cash + Stock Market Value)
@@ -164,13 +166,18 @@ func runSimulation(c *gin.Context) {
 	var result SimResult
 
 	// Track minCash to determine "Required Capital" (Max Investment)
-	minCash := 0.0
+	// Initial Investment = Initial Shares * Pre-Close Price
+	initialPosValueAtStart := float64(config.InitialShares) * preClosePrice
+	minCash := -initialPosValueAtStart // Initially we spent this much (negative cash)
 
 	// Loop
 	for _, k := range klines {
 		date := k.Timestamp[:10]
 		if _, ok := dailyStatsMap[date]; !ok {
-			dailyStatsMap[date] = &DailyStat{Date: date}
+			dailyStatsMap[date] = &DailyStat{
+				Date:  date,
+				Value: float64(config.InitialShares) * k.Close, // Initial Market Value of base position
+			}
 		}
 		stat := dailyStatsMap[date]
 		stat.ClosePrice = RoundTo3(k.Close) // Update close
@@ -321,8 +328,43 @@ func runSimulation(c *gin.Context) {
 	for _, s := range sortedStats {
 		// Convert "NetValue PnL" to "Total Equity"
 		// NetValue from sim is (CashChange + StockValue).
-		// Equity = Initial + NetValue.
-		equity := initialCapital + s.NetValue
+		// Equity = Initial Investment (Cash Outlay) + NetValue (PnL + Position Value + InitialPosValueChange?)
+
+		// Easier approach:
+		// Equity = (Initial Capital - Cost of Buys + Revenue of Sells) + (Current Position * Current Price)
+		// Initial Capital we tracked as `minCash`. But `minCash` is negative max outlay.
+		// Let's say we put in `Abs(minCash)` at start.
+		// Current Cash = Abs(minCash) + (Revenue - Cost)
+		// Current Equity = Current Cash + (NetPosition + InitialShares) * s.ClosePrice
+
+		// Re-calculating correctly for every day:
+		// s.NetValue currently stores: (Running Cash Change + Net Position * ClosePrice)
+		// It does NOT include Initial Position Value.
+
+		// Correct Equity for ROI:
+		// Equity = (InitialCapital + s.NetValue) + (InitialShares * s.ClosePrice - InitialShares * StartPrice)?
+		// No, s.NetValue = (CurrentCash - StartCash) + (NetPos * Price).
+		// StartCash = 0 in relative accounting.
+		// Real Equity = (InitialCapital + CashChange) + (NetPos + InitialShares) * Price.
+		// InitialCapital we set to `initialCapital` variable (Abs(minCash)).
+		// This `initialCapital` ALREADY includes `InitialShares * StartPrice`.
+
+		// So:
+		// Equity = (initialCapital + s.NetValue - (NetPos * Price)) + (NetPos * Price) + (InitialShares * Price) ... Wait.
+
+		// Let's stick to the definition:
+		// initialCapital = MaxCashUsed + InitialPosValue(at Start)
+		// Daily Equity = initialCapital + PnL
+		// PnL = (Cash Change) + (Position Change Value)
+		// Cash Change = s.NetValue (partially)
+		//
+		// s.NetValue in previous logic was: cumulativeCash + currentPos * closePrice.
+		// It assumes starting from 0 cash and 0 pos.
+		// So s.NetValue IS the PnL of the GRID part.
+
+		// Total Equity = initialCapital + s.NetValue + InitialPosPnL.
+		InitialPosPnL := float64(config.InitialShares) * (s.ClosePrice - preClosePrice)
+		equity := initialCapital + s.NetValue + InitialPosPnL
 
 		// Max Drawdown Calculation
 		if equity > maxEquity {
@@ -344,7 +386,7 @@ func runSimulation(c *gin.Context) {
 		dailyNetValues = append(dailyNetValues, equity)
 	}
 
-	result.NetPosition = float64(totalBuyCount-totalSellCount) * config.AmountPerGrid
+	result.NetPosition = float64(int64(totalBuyCount-totalSellCount)*int64(config.AmountPerGrid) + config.InitialShares)
 	result.TotalProfit = RoundTo3(result.TotalProfit)
 	result.TotalComm = RoundTo3(result.TotalComm)
 	result.DailyStats = sortedStats

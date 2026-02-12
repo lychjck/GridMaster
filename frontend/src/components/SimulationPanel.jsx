@@ -178,14 +178,29 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">单笔数量 (Shares)</label>
-                        <input
-                            type="number" step="100"
-                            className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
-                            value={config.amountPerGrid}
-                            onChange={e => setConfig({ ...config, amountPerGrid: e.target.value })}
-                        />
+                    <div className="flex gap-4">
+                        <div className="flex-1 flex flex-col gap-2">
+                            <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">单笔数量 (Shares)</label>
+                            <input
+                                type="number" step="100"
+                                className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono w-full"
+                                value={config.amountPerGrid}
+                                onChange={e => setConfig({ ...config, amountPerGrid: e.target.value })}
+                            />
+                        </div>
+                        <div className="flex-1 flex flex-col gap-2">
+                            <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">基础持仓 (Initial)</label>
+                            <input
+                                type="text"
+                                className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono w-full"
+                                value={config.initialShares === 0 ? '' : config.initialShares}
+                                placeholder="0"
+                                onChange={e => {
+                                    const val = e.target.value.replace(/^0+/, '');
+                                    setConfig({ ...config, initialShares: val === '' ? 0 : parseInt(val) || 0 });
+                                }}
+                            />
+                        </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
@@ -249,7 +264,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.maxDrawdown || 0).toFixed(2)}
                             unit="%"
                             color="text-rose-400"
-                            tooltip="账户权益从最高点到底部的最大跌幅。分母为策略运行期间的最大资金占用。"
+                            tooltip="算法: Max((历史最高净值 - 当日净值) / 历史最高净值)。反映策略从任一高点开始出现的最大资金回落幅度。分母为策略运行期间的『最大资金占用』。"
                         />
                         <StatCard
                             icon={<Calculator />}
@@ -257,7 +272,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.sharpeRatio || 0).toFixed(2)}
                             unit=""
                             color="text-violet-400"
-                            tooltip="衡量风险调整后收益。越高越好。它是基于区间收益率波动计算的年化指标。"
+                            tooltip="算法: (每日收益率均值 / 收益率标准差) × √252。衡量单位风险带来的超额收益。越高代表策略稳定性越好。"
                         />
                         <StatCard
                             icon={<TrendingDown />}
@@ -265,7 +280,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.periodReturn || 0).toFixed(2)}
                             unit="%"
                             color={(result.periodReturn || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
-                            tooltip="回测区间内策略的总收益率（包含未实现浮动盈亏）。建议将其与旁边的'标的涨幅'直接对比，看策略是否抵御了下跌或增厚了利润。"
+                            tooltip="算法: (期末总权益 / 最大投入本金) - 1。分母是模拟过程中实际占用的最大现金量（非固定初始值）。即便您不输入初始持仓，系统也会自动计算所需的本金。"
                         />
                         <StatCard
                             icon={<List />}
@@ -273,7 +288,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.benchmarkReturn || 0).toFixed(2)}
                             unit="%"
                             color={(result.benchmarkReturn || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
-                            tooltip="回测期间资产价格的原始变化。如果是负数且策略收益比它大，说明网格产生了超额收益。"
+                            tooltip="算法: (期末收盘价 / 前一交易日收盘价) - 1。反映资产本身的原始表现，包含跳空缺口。"
                         />
                     </div>
 
