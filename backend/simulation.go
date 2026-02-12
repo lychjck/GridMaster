@@ -55,6 +55,7 @@ type SimResult struct {
 	CAGR            float64 `json:"cagr"`            // Compound Annual Growth Rate
 	WinRate         float64 `json:"winRate"`         // Count of Profitable Grid Pairs / Total Completed Pairs
 	BenchmarkReturn float64 `json:"benchmarkReturn"` // Stock Price Change %
+	PeriodReturn    float64 `json:"periodReturn"`    // Un-annualized Strategy Return %
 }
 
 func RegisterSimulationRoutes(r *gin.Engine) {
@@ -129,13 +130,20 @@ func runSimulation(c *gin.Context) {
 
 	if config.GridStepType == "absolute" {
 		stepValue = config.GridStep
-		initialIndex = int(MathRound((firstPrice - config.BasePrice) / stepValue))
+		initialIndex = int((firstPrice - config.BasePrice) / stepValue)
 	} else {
 		stepValue = config.GridStep / 100.0
-		initialIndex = int(MathRound((firstPrice/config.BasePrice - 1) / stepValue))
+		initialIndex = int((firstPrice/config.BasePrice - 1) / stepValue)
 	}
 
 	lastExecIndex := initialIndex
+
+	// Fetch Pre-Close Price for Benchmark Calculation
+	preClosePrice := firstPrice // Fallback to open price
+	var preCloseKline Kline
+	if err := DB.Table("klines_daily").Where("symbol = ? AND timestamp < ?", config.Symbol, config.StartDate).Order("timestamp desc").First(&preCloseKline).Error; err == nil {
+		preClosePrice = preCloseKline.Close
+	}
 
 	// Portfolio Tracking for Advanced Metrics
 	// Assume initial cash large enough to cover all buys, to calculate NAV change correctly.
@@ -414,10 +422,16 @@ func runSimulation(c *gin.Context) {
 		}
 	}
 
-	// 5. Benchmark Return (Stock Price Change)
-	if firstPrice > 0 {
+	// 5. Period Return (Un-annualized Strategy Yield)
+	if initialCapital > 0 {
+		finalEquity := dailyNetValues[len(dailyNetValues)-1]
+		result.PeriodReturn = RoundTo3((finalEquity/initialCapital - 1) * 100)
+	}
+
+	// 6. Benchmark Return (Stock Price Change relative to Pre-Close)
+	if preClosePrice > 0 {
 		lastPrice := klines[len(klines)-1].Close
-		result.BenchmarkReturn = RoundTo3((lastPrice - firstPrice) / firstPrice * 100)
+		result.BenchmarkReturn = RoundTo3((lastPrice - preClosePrice) / preClosePrice * 100)
 	}
 
 	c.JSON(http.StatusOK, result)

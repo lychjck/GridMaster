@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { runSimulation, getDailyKlines } from '../lib/api';
-import { RefreshCw, Calculator, TrendingUp, DollarSign, Play, List, Calendar, ChevronDown, MoveHorizontal } from 'lucide-react';
+import { RefreshCw, Calculator, TrendingUp, TrendingDown, DollarSign, Play, List, Calendar, ChevronDown, MoveHorizontal } from 'lucide-react';
 import TradeChart from './TradeChart';
 import CyberDatePicker from './CyberDatePicker';
 
@@ -241,14 +241,6 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
             {/* Results Area */}
             {result && (
                 <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
-                        <StatCard icon={<DollarSign />} label="总净收益" value={(result.totalProfit || 0).toFixed(2)} unit="CNY" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} />
-                        <StatCard icon={<MoveHorizontal />} label="持仓变动" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
-                        <StatCard icon={<RefreshCw />} label="总成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
-                        <StatCard icon={<TrendingUp />} label="总佣金成本" value={(result.totalComm || 0).toFixed(2)} unit="CNY" color="text-amber-400" />
-                    </div>
-
-                    {/* Advanced Metrics Row */}
                     {/* Advanced Metrics Row */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
                         <StatCard
@@ -257,7 +249,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.maxDrawdown || 0).toFixed(2)}
                             unit="%"
                             color="text-rose-400"
-                            tooltip="账户权益从最高点到底部的最大跌幅，衡量策略在最坏情况下的风险承受能力。"
+                            tooltip="账户权益从最高点到底部的最大跌幅。分母为策略运行期间的最大资金占用。"
                         />
                         <StatCard
                             icon={<Calculator />}
@@ -265,15 +257,15 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.sharpeRatio || 0).toFixed(2)}
                             unit=""
                             color="text-violet-400"
-                            tooltip="衡量每承受一单位总风险所产生的超额回报。比率越高，策略的风险调整后收益越好 (假设无风险利率为0)。"
+                            tooltip="衡量风险调整后收益。越高越好。它是基于区间收益率波动计算的年化指标。"
                         />
                         <StatCard
-                            icon={<TrendingUp />}
-                            label="年化收益 (CAGR)"
-                            value={(result.cagr || 0).toFixed(2)}
+                            icon={<TrendingDown />}
+                            label="策略收益 (Strategy)"
+                            value={(result.periodReturn || 0).toFixed(2)}
                             unit="%"
-                            color={(result.cagr || 0) >= 0 ? "text-emerald-400" : "text-slate-400"}
-                            tooltip="复合年均增长率，将当前的总收益转化为按年计算的平滑增长率，便于横向对比。"
+                            color={(result.periodReturn || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+                            tooltip="回测区间内策略的总收益率（包含未实现浮动盈亏）。建议将其与旁边的'标的涨幅'直接对比，看策略是否抵御了下跌或增厚了利润。"
                         />
                         <StatCard
                             icon={<List />}
@@ -281,8 +273,23 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             value={(result.benchmarkReturn || 0).toFixed(2)}
                             unit="%"
                             color={(result.benchmarkReturn || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
-                            tooltip="所选时间段内，资产本身（如ETF）的价格变化幅度。用于对比网格策略是否跑赢了直接持仓。"
+                            tooltip="回测期间资产价格的原始变化。如果是负数且策略收益比它大，说明网格产生了超额收益。"
                         />
+                    </div>
+
+                    {/* Extended Row for Annualized */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
+                        <StatCard
+                            icon={<TrendingUp />}
+                            label="年化收益 (CAGR)"
+                            value={(result.cagr || 0).toFixed(2)}
+                            unit="%"
+                            color={(result.cagr || 0) >= 0 ? "text-emerald-400" : "text-slate-400"}
+                            tooltip="复合年均增长率。它是将短期的区间收益『放大』到一年长度的结果。如果回测天数很少，该数值会显得非常激进（正负都会放大），仅供横向对比参考。"
+                        />
+                        <StatCard icon={<DollarSign />} label="网格利润 (已实现)" value={(result.totalProfit || 0).toFixed(2)} unit="CNY" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="这仅仅是已经完成买卖对冲的网格利润，不包含您当前手中持仓的浮动盈亏。" />
+                        <StatCard icon={<MoveHorizontal />} label="当前持仓" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
+                        <StatCard icon={<RefreshCw />} label="成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
                     </div>
 
                     <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
