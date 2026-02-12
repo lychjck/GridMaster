@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite" // Pure Go SQLite driver
@@ -53,6 +54,9 @@ func main() {
 
 	// Auto Migrate
 	DB.AutoMigrate(&Symbol{})
+
+	// Start Background Refresh Task
+	go startBackgroundRefresh()
 
 	r := gin.Default()
 
@@ -252,4 +256,36 @@ func main() {
 	})
 
 	r.Run(":8080")
+}
+
+func startBackgroundRefresh() {
+	log.Println("Starting background data refresh task...")
+	for {
+		// Wait for next interval: e.g. every 1 hour
+		// We use a shorter interval for initial debugging/testing if needed,
+		// but 1h is reasonable for market data updates.
+		log.Println("Background Refresh: Starting scan for all symbols...")
+
+		var symbols []Symbol
+		if err := DB.Find(&symbols).Error; err != nil {
+			log.Printf("Background Refresh: Error fetching symbols: %v\n", err)
+		} else {
+			for _, s := range symbols {
+				log.Printf("Background Refresh: Updating data for %s...\n", s.Symbol)
+				cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s.Symbol, "--count", "800")
+				cmd.Dir = ".."
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					log.Printf("Background Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
+				} else {
+					log.Printf("Background Refresh: Success for %s", s.Symbol)
+				}
+				// Sleep a bit between symbols to avoid heavy load or rate limiting
+				time.Sleep(5 * time.Second)
+			}
+		}
+
+		log.Println("Background Refresh: Finished current scan. Sleeping for 1 hour.")
+		time.Sleep(1 * time.Hour)
+	}
 }
