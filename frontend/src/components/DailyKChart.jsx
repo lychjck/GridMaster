@@ -19,7 +19,7 @@ const DailyKChart = ({ symbol, startDate }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [activeRange, setActiveRange] = useState(0); // Default '全部'
+    const [activeRange, setActiveRange] = useState(120); // Default to '半年' (120 trading days) instead of '全部'
 
     // When data loads, potentially apply initial zoom if not '全部', 
     // but we default to '全部' (0) here, so option natively uses it.
@@ -88,7 +88,15 @@ const DailyKChart = ({ symbol, startDate }) => {
             // Find the start of the current year in data
             const currentYear = new Date().getFullYear().toString();
             let ytdIndex = data.findIndex(d => d.timestamp.startsWith(currentYear));
-            if (ytdIndex === -1) ytdIndex = 0; // fallback
+
+            // If current year is not found (e.g. 2026 data not yet available), 
+            // fallback to the beginning of the latest available year in data
+            if (ytdIndex === -1 && data.length > 0) {
+                const latestYear = data[data.length - 1].timestamp.slice(0, 4);
+                ytdIndex = data.findIndex(d => d.timestamp.startsWith(latestYear));
+            }
+
+            if (ytdIndex === -1) ytdIndex = 0; // ultimate fallback
             startValue = (ytdIndex / data.length) * 100;
             endValue = 100;
         } else {
@@ -216,7 +224,18 @@ const DailyKChart = ({ symbol, startDate }) => {
                 // We leave the initial zoom to default to last ~3 months visually unless activeRange dictates otherwise. 
                 // But since activeRange default is 0 (all), we should initialize it to 0.
                 // Wait, if activeRange is '全部', the initial zoom should be 0.
-                start: activeRange === 0 ? 0 : (activeRange === 'YTD' ? 0 : Math.max(0, 100 - (activeRange / data.length * 100))),
+                start: activeRange === 0 ? 0 :
+                    (activeRange === 'YTD' ?
+                        (() => {
+                            const currentYear = new Date().getFullYear().toString();
+                            let idx = data.findIndex(d => d.timestamp.startsWith(currentYear));
+                            if (idx === -1) {
+                                const latestYear = data[data.length - 1].timestamp.slice(0, 4);
+                                idx = data.findIndex(d => d.timestamp.startsWith(latestYear));
+                            }
+                            return idx === -1 ? 0 : (idx / data.length * 100);
+                        })()
+                        : Math.max(0, 100 - (activeRange / data.length * 100))),
                 end: 100
             },
             {
