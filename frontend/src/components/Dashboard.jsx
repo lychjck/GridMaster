@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation, refreshData } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2 } from 'lucide-react';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
+import DailyKChart from './DailyKChart';
 
 const Dashboard = () => {
     // === Domain State ===
@@ -457,6 +458,16 @@ const Dashboard = () => {
                             <BarChart3 className="w-4 h-4 relative z-10" />
                             <span className="relative z-10 hidden sm:inline">网格回测</span>
                         </button>
+                        <button
+                            onClick={() => setActiveTab('daily-k')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 relative overflow-hidden flex items-center gap-2 ${activeTab === 'daily-k' ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                            {activeTab === 'daily-k' && (
+                                <div className="absolute inset-0 bg-indigo-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] rounded-lg"></div>
+                            )}
+                            <Calendar className="w-4 h-4 relative z-10" />
+                            <span className="relative z-10 hidden sm:inline">历史日K</span>
+                        </button>
                     </div>
 
                     <button
@@ -651,9 +662,15 @@ const Dashboard = () => {
                                 </div>
                             </div>
                         )
-                    ) : (
+                    ) : activeTab === 'simulation' ? (
                         <div className="glass-panel min-h-full rounded-2xl p-8 border border-white/5 animate-slide-up">
                             <SimulationPanel availableDates={availableDates} initialBasePrice={initialPrice} symbol={selectedSymbol} />
+                        </div>
+                    ) : (
+                        <div className="w-full h-full glass-panel rounded-2xl border border-white/5 shadow-2xl overflow-hidden relative group animate-slide-up" style={{ animationDelay: '0.05s' }}>
+                            <div className="p-4 h-full relative z-10">
+                                <DailyKChart symbol={selectedSymbol} />
+                            </div>
                         </div>
                     )}
                 </main>
