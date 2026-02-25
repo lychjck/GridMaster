@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation, refreshData } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette } from 'lucide-react';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
 import DailyKChart from './DailyKChart';
@@ -173,10 +173,20 @@ const Dashboard = () => {
 
     useEffect(() => {
         fetchData();
-        // 移除自动刷新，避免干扰用户分析
-        // const interval = setInterval(fetchData, 60000);
-        // return () => clearInterval(interval);
     }, [selectedDate, selectedSymbol, availableDates]);
+
+    // 自动刷新机制：仅在未进行模拟且查看当日图表时运行
+    useEffect(() => {
+        // 如果处于网格回测标签页，或者图表上正在显示回测点位，则不要刷新以保护回测数据
+        if (activeTab === 'simulation' || showLiveTrades) return;
+
+        // 仅在查看当日数据时自动刷新
+        const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+        if (selectedDate !== todayStr) return;
+
+        const interval = setInterval(fetchData, 5000); // 5秒轮询实现“伪实时”盯盘
+        return () => clearInterval(interval);
+    }, [selectedDate, selectedSymbol, availableDates, activeTab, showLiveTrades]);
 
     // Sync state to localStorage
     useEffect(() => { localStorage.setItem('selectedSymbol', selectedSymbol); }, [selectedSymbol]);
@@ -185,11 +195,11 @@ const Dashboard = () => {
     useEffect(() => { localStorage.setItem('gridStepUnit', gridStepUnit); }, [gridStepUnit]);
     useEffect(() => { localStorage.setItem('initialPrice', initialPrice); }, [initialPrice]);
 
-    // Clear simulation markers IF AND ONLY IF asset changes, NOT for every fetch
+    // Clear simulation markers IF AND ONLY IF asset or date changes, NOT for every fetch
     useEffect(() => {
         setShowLiveTrades(false);
         setSimulatedTrades([]);
-    }, [selectedSymbol]);
+    }, [selectedSymbol, selectedDate]);
 
     // Clear simulation markers if core grid settings change
     useEffect(() => {
@@ -519,8 +529,8 @@ const Dashboard = () => {
                                                     setIsThemePanelOpen(false);
                                                 }}
                                                 className={`relative group flex flex-col gap-2 p-3 rounded-xl border transition-all duration-200 text-left overflow-hidden ${themeId === theme.id
-                                                        ? 'border-white/30 bg-white/10 shadow-lg'
-                                                        : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/15'
+                                                    ? 'border-white/30 bg-white/10 shadow-lg'
+                                                    : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/15'
                                                     }`}
                                             >
                                                 {/* Color Preview Bands */}
@@ -591,31 +601,55 @@ const Dashboard = () => {
                                 <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Time Machine</h2>
                             </div>
 
-                            <div className="relative">
+                            <div className="flex items-center gap-2 relative">
                                 <button
-                                    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                                    className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                                    onClick={() => {
+                                        const idx = availableDates.indexOf(selectedDate);
+                                        if (idx > 0) setSelectedDate(availableDates[idx - 1]);
+                                    }}
+                                    disabled={!availableDates.length || availableDates.indexOf(selectedDate) <= 0}
+                                    className="p-3 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
                                 >
-                                    <span className="font-mono">{selectedDate || 'Select Date'}</span>
-                                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                                    <ChevronLeft className="w-4 h-4" />
                                 </button>
 
-                                {isDatePickerOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setIsDatePickerOpen(false)}></div>
-                                        <div className="absolute top-full left-0 mt-2 glass-panel rounded-xl shadow-2xl shadow-black/50 overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in duration-200">
-                                            <CyberDatePicker
-                                                selectedDate={selectedDate}
-                                                availableDates={availableDates}
-                                                onSelect={(date) => {
-                                                    setSelectedDate(date);
-                                                    setIsDatePickerOpen(false);
-                                                }}
-                                                onClose={() => setIsDatePickerOpen(false)}
-                                            />
-                                        </div>
-                                    </>
-                                )}
+                                <div className="relative flex-1">
+                                    <button
+                                        onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                                    >
+                                        <span className="font-mono">{selectedDate || 'Select Date'}</span>
+                                        <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {isDatePickerOpen && (
+                                        <>
+                                            <div className="fixed inset-0 z-40" onClick={() => setIsDatePickerOpen(false)}></div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 glass-panel rounded-xl shadow-2xl shadow-black/50 overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                                                <CyberDatePicker
+                                                    selectedDate={selectedDate}
+                                                    availableDates={availableDates}
+                                                    onSelect={(date) => {
+                                                        setSelectedDate(date);
+                                                        setIsDatePickerOpen(false);
+                                                    }}
+                                                    onClose={() => setIsDatePickerOpen(false)}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={() => {
+                                        const idx = availableDates.indexOf(selectedDate);
+                                        if (idx >= 0 && idx < availableDates.length - 1) setSelectedDate(availableDates[idx + 1]);
+                                    }}
+                                    disabled={!availableDates.length || availableDates.indexOf(selectedDate) === -1 || availableDates.indexOf(selectedDate) >= availableDates.length - 1}
+                                    className="p-3 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
 
