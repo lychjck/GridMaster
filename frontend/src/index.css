@@ -40,20 +40,211 @@
   }
 }
 
+/* ===== Theme CSS Variables ===== */
+:root {
+  --theme-bg-color: #020617;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #1e1b4b 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #3730a3 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #1e3a5f 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #0c4a6e 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #2d1b69 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #064e3b 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #1e1b4b 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #4c0519 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(6, 182, 212, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+  /* Panel themed variables */
+  --panel-bg: rgba(10, 8, 25, 0.90);
+  --panel-border: rgba(99, 102, 241, 0.15);
+  --panel-accent: rgba(99, 102, 241, 0.08);
+}
+
+/* ===== Theme: aurora (default, indigo/purple) ===== */
+[data-theme="aurora"] {
+  --theme-bg-color: #020617;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #1e1b4b 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #3730a3 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #1e3a5f 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #0c4a6e 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #2d1b69 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #064e3b 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #1e1b4b 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #4c0519 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(6, 182, 212, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+  --panel-bg: rgba(10, 8, 28, 0.90);
+  --panel-border: rgba(99, 102, 241, 0.18);
+  --panel-accent: rgba(99, 102, 241, 0.06);
+}
+
+/* ===== Theme: forest (emerald/teal) ===== */
+[data-theme="forest"] {
+  --theme-bg-color: #011a10;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #064e3b 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #065f46 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #042f1e 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #134e4a 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #14532d 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #052e16 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #0f766e 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #022c22 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(16, 185, 129, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(20, 184, 166, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(5, 150, 105, 0.10) 0%, transparent 50%);
+  --panel-bg: rgba(4, 18, 12, 0.90);
+  --panel-border: rgba(16, 185, 129, 0.18);
+  --panel-accent: rgba(16, 185, 129, 0.06);
+}
+
+/* ===== Theme: lava (orange/rose) ===== */
+[data-theme="lava"] {
+  --theme-bg-color: #1a0800;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #7f1d1d 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #9a3412 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #450a0a 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #7c2d12 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #881337 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #4c0519 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #7f1d1d 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #431407 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(249, 115, 22, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(239, 68, 68, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(251, 146, 60, 0.10) 0%, transparent 50%);
+  --panel-bg: rgba(22, 8, 4, 0.90);
+  --panel-border: rgba(249, 115, 22, 0.18);
+  --panel-accent: rgba(249, 115, 22, 0.06);
+}
+
+/* ===== Theme: ocean (blue/cyan) ===== */
+[data-theme="ocean"] {
+  --theme-bg-color: #020c1b;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #0c1445 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #0e3a6e 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #082342 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #0c4a6e 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #164e63 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #0a2540 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #0e7490 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #082f49 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(14, 165, 233, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(6, 182, 212, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(56, 189, 248, 0.10) 0%, transparent 50%);
+  --panel-bg: rgba(3, 10, 25, 0.90);
+  --panel-border: rgba(14, 165, 233, 0.18);
+  --panel-accent: rgba(14, 165, 233, 0.06);
+}
+
+/* ===== Theme: dawn (amber/yellow) ===== */
+[data-theme="dawn"] {
+  --theme-bg-color: #140b00;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #451a03 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #78350f 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #422006 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #713f12 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #365314 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #3b1a08 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #713f12 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #7c2d12 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(245, 158, 11, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(234, 179, 8, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(251, 191, 36, 0.10) 0%, transparent 50%);
+  --panel-bg: rgba(20, 11, 2, 0.90);
+  --panel-border: rgba(245, 158, 11, 0.18);
+  --panel-accent: rgba(245, 158, 11, 0.06);
+}
+
+/* ===== Theme: rose (pink/violet) ===== */
+[data-theme="rose"] {
+  --theme-bg-color: #160818;
+  --theme-bg:
+    radial-gradient(ellipse 120% 60% at 50% -10%, #4a044e 0%, transparent 70%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, #701a75 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at -10% 5%, #3b0764 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 45%, #500724 0%, transparent 50%),
+    radial-gradient(ellipse 55% 35% at 100% 40%, #581c87 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 10% 100%, #4a044e 0%, transparent 55%),
+    radial-gradient(ellipse 65% 45% at 90% 100%, #831843 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 110%, #3b0764 0%, transparent 55%);
+  --theme-overlay:
+    radial-gradient(ellipse 100% 60% at 30% 20%, rgba(232, 121, 249, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 50% at 70% 70%, rgba(217, 70, 239, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 10%, rgba(167, 139, 250, 0.10) 0%, transparent 50%);
+  --panel-bg: rgba(18, 5, 22, 0.90);
+  --panel-border: rgba(232, 121, 249, 0.18);
+  --panel-accent: rgba(232, 121, 249, 0.06);
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #000000;
-  /* Aurora Background */
-  background-image:
-    radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 60%),
-    radial-gradient(circle at 100% 0%, #312e81 0%, transparent 50%),
-    radial-gradient(circle at 0% 0%, #0f172a 0%, transparent 50%);
+  background-color: var(--theme-bg-color);
+  background-image: var(--theme-bg);
   background-attachment: fixed;
+  transition: background-color 0.5s ease, background-image 0.5s ease;
   color: #e2e8f0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow: hidden;
-  /* App-like feel */
+  position: relative;
+}
+
+/* Animated aurora overlay - uses theme overlay variable */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--theme-overlay);
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Subtle grid texture overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.7;
+  }
+
+  33% {
+    transform: translate(-3%, 4%) scale(1.04);
+    opacity: 1;
+  }
+
+  66% {
+    transform: translate(4%, -3%) scale(0.97);
+    opacity: 0.85;
+  }
+
+  100% {
+    transform: translate(-2%, 2%) scale(1.02);
+    opacity: 0.9;
+  }
 }
 
 /* Custom Scrollbar for Webkit */
@@ -77,10 +268,12 @@ body {
 
 /* Utility Classes for Glassmorphism */
 .glass-panel {
-  background: var(--color-glass-surface);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--color-glass-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--panel-border);
+  box-shadow: inset 0 0 60px var(--panel-accent);
+  transition: background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease;
 }
 
 .glass-button {

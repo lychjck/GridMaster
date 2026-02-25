@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation, refreshData } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar } from 'lucide-react';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
 import DailyKChart from './DailyKChart';
+import { useTheme, THEMES } from '../lib/ThemeContext.jsx';
 
 const Dashboard = () => {
     // === Domain State ===
@@ -41,6 +42,10 @@ const Dashboard = () => {
 
     // UI Tab State
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
+
+    // Theme Panel
+    const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
+    const { themeId, setThemeId, themes } = useTheme();
 
     // === Effects & Logic ===
 
@@ -468,6 +473,101 @@ const Dashboard = () => {
                             <Calendar className="w-4 h-4 relative z-10" />
                             <span className="relative z-10 hidden sm:inline">历史日K</span>
                         </button>
+                    </div>
+
+                    {/* Theme Switcher */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsThemePanelOpen(!isThemePanelOpen)}
+                            className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-slate-400 hover:text-purple-300 transition-all active:scale-95 duration-200 group relative overflow-hidden"
+                            title="切换主题"
+                        >
+                            <Palette className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" />
+                        </button>
+
+                        {isThemePanelOpen && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setIsThemePanelOpen(false)}
+                                />
+                                <div className="absolute right-0 top-full mt-3 w-72 glass-panel rounded-2xl shadow-2xl shadow-black/60 overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                                    {/* Panel Header */}
+                                    <div className="px-4 pt-4 pb-3 border-b border-white/5">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Palette className="w-4 h-4 text-purple-400" />
+                                                <span className="text-sm font-bold text-white">主题配色</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsThemePanelOpen(false)}
+                                                className="p-1 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1 font-mono">SELECT VISUAL THEME</p>
+                                    </div>
+
+                                    {/* Theme Cards Grid */}
+                                    <div className="p-3 grid grid-cols-2 gap-2">
+                                        {themes.map(theme => (
+                                            <button
+                                                key={theme.id}
+                                                onClick={() => {
+                                                    setThemeId(theme.id);
+                                                    setIsThemePanelOpen(false);
+                                                }}
+                                                className={`relative group flex flex-col gap-2 p-3 rounded-xl border transition-all duration-200 text-left overflow-hidden ${themeId === theme.id
+                                                        ? 'border-white/30 bg-white/10 shadow-lg'
+                                                        : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/15'
+                                                    }`}
+                                            >
+                                                {/* Color Preview Bands */}
+                                                <div className="flex gap-1 h-5 rounded-lg overflow-hidden">
+                                                    {theme.preview.map((color, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex-1 rounded-sm"
+                                                            style={{ backgroundColor: color }}
+                                                        />
+                                                    ))}
+                                                </div>
+
+                                                {/* Theme Name */}
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">{theme.name}</p>
+                                                    <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">{theme.nameEn}</p>
+                                                </div>
+
+                                                {/* Active Checkmark */}
+                                                {themeId === theme.id && (
+                                                    <div
+                                                        className="absolute top-2 right-2 w-4 h-4 rounded-full flex items-center justify-center"
+                                                        style={{ backgroundColor: theme.accent }}
+                                                    >
+                                                        <Check className="w-2.5 h-2.5 text-white" />
+                                                    </div>
+                                                )}
+
+                                                {/* Glow on active */}
+                                                {themeId === theme.id && (
+                                                    <div
+                                                        className="absolute inset-0 rounded-xl opacity-20 pointer-events-none"
+                                                        style={{ boxShadow: `inset 0 0 20px ${theme.accent}` }}
+                                                    />
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Footer tip */}
+                                    <div className="px-4 pb-3 pt-0">
+                                        <p className="text-[9px] text-slate-600 text-center font-mono">THEME IS SAVED AUTOMATICALLY</p>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     <button
