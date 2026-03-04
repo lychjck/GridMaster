@@ -42,6 +42,7 @@ const Dashboard = () => {
 
     // UI Tab State
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
+    const [showGridLines, setShowGridLines] = useState(localStorage.getItem('showGridLines') !== 'false');
 
     // Theme Panel
     const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -194,6 +195,7 @@ const Dashboard = () => {
     useEffect(() => { localStorage.setItem('gridStep', gridStep); }, [gridStep]);
     useEffect(() => { localStorage.setItem('gridStepUnit', gridStepUnit); }, [gridStepUnit]);
     useEffect(() => { localStorage.setItem('initialPrice', initialPrice); }, [initialPrice]);
+    useEffect(() => { localStorage.setItem('showGridLines', showGridLines); }, [showGridLines]);
 
     // Clear simulation markers IF AND ONLY IF asset or date changes, NOT for every fetch
     useEffect(() => {
@@ -662,20 +664,37 @@ const Dashboard = () => {
                                     <div className="w-1.5 h-4 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
                                     <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Grid Settings</h2>
                                 </div>
-                                {/* Unit Toggle */}
-                                <div className="flex bg-black/30 p-0.5 rounded-lg border border-white/5">
-                                    <button
-                                        onClick={() => setGridStepUnit('percent')}
-                                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${gridStepUnit === 'percent' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                                    >
-                                        %
-                                    </button>
-                                    <button
-                                        onClick={() => setGridStepUnit('value')}
-                                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${gridStepUnit === 'value' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                                    >
-                                        点
-                                    </button>
+                                <div className="flex items-center gap-3">
+                                    {/* Grid Lines Toggle */}
+                                    <label className="flex items-center gap-1.5 cursor-pointer group">
+                                        <div className="relative">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only"
+                                                checked={showGridLines}
+                                                onChange={() => setShowGridLines(!showGridLines)}
+                                            />
+                                            <div className={`block w-7 h-4 rounded-full transition-colors ${showGridLines ? 'bg-indigo-500' : 'bg-slate-700'}`}></div>
+                                            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${showGridLines ? 'translate-x-3' : 'translate-x-0'}`}></div>
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 font-medium group-hover:text-slate-300 transition-colors uppercase tracking-wider">网格线</span>
+                                    </label>
+
+                                    {/* Unit Toggle */}
+                                    <div className="flex bg-black/30 p-0.5 rounded-lg border border-white/5">
+                                        <button
+                                            onClick={() => setGridStepUnit('percent')}
+                                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${gridStepUnit === 'percent' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            %
+                                        </button>
+                                        <button
+                                            onClick={() => setGridStepUnit('value')}
+                                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${gridStepUnit === 'value' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            点
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -792,6 +811,7 @@ const Dashboard = () => {
                                         tradePoints={showLiveTrades ? simulatedTrades : []}
                                         preClose={preClose}
                                         isLive={selectedDate === new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')}
+                                        showGridLines={showGridLines}
                                     />
                                 </div>
                             </div>

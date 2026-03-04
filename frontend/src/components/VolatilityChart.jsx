@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive }) => {
+const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive, showGridLines = true }) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
     const isDraggingRef = useRef(false);
@@ -226,7 +226,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
         // Calculate Grid Lines
         const gridChartLines = [];
 
-        if (gridStep && initialPrice) {
+        if (showGridLines && gridStep && initialPrice) {
             const base = parseFloat(initialPrice);
             const step = gridStepUnit === 'value' ? gridStep : (base * gridStep / 100);
 
