@@ -1,27 +1,41 @@
 import React, { useState } from 'react';
-import { runSimulation, getDailyKlines } from '../lib/api';
+import { runSimulation, runBatchSimulation, getDailyKlines } from '../lib/api';
 import { RefreshCw, Calculator, TrendingUp, TrendingDown, DollarSign, Play, List, Calendar, ChevronDown, MoveHorizontal } from 'lucide-react';
 import TradeChart from './TradeChart';
 import CyberDatePicker from './CyberDatePicker';
 
 const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const [config, setConfig] = useState(() => {
-        const saved = localStorage.getItem('sim_config');
-        return saved ? JSON.parse(saved) : {
+        const defaults = {
             startDate: availableDates.length > 0 ? availableDates[availableDates.length - 1] : '2026-01-01',
             basePrice: initialBasePrice || 1.100,
             gridStep: 0.005,
-            gridStepType: 'percent', // 默认改用百分比，更符合常用直觉
+            minStep: 0.5,
+            maxStep: 3.0,
+            stepInterval: 0.1,
+            gridStepType: 'percent',
             amountPerGrid: 2000,
-            commissionRate: 0.0001, // 万1
+            commissionRate: 0.0001,
             minCommission: 0.2,
+            initialShares: 0,
             usePenetration: false
         };
+        const saved = localStorage.getItem('sim_config');
+        if (!saved) return defaults;
+        try {
+            const parsed = JSON.parse(saved);
+            // Merge defaults with saved values to ensure new fields (minStep etc.) exist
+            return { ...defaults, ...parsed };
+        } catch (e) {
+            return defaults;
+        }
     });
 
     const [result, setResult] = useState(null);
+    const [batchResult, setBatchResult] = useState(null);
 
     const [loading, setLoading] = useState(false);
+    const [simMode, setSimMode] = useState('single'); // 'single' | 'batch'
     const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart'
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const hasAutoSyncedDate = React.useRef(false);
@@ -85,18 +99,50 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const handleSimulate = async () => {
         setLoading(true);
         try {
-            const res = await runSimulation({
-                ...config,
-                symbol: symbol, // Pass symbol from props
-                basePrice: parseFloat(config.basePrice),
-                gridStep: parseFloat(config.gridStep),
-                amountPerGrid: parseFloat(config.amountPerGrid),
-                commissionRate: parseFloat(config.commissionRate),
-                minCommission: parseFloat(config.minCommission)
-            });
-            console.log("Simulation Result:", res);
-            setResult(res);
-            // If we are in chart mode but no data, it's fine, but if we are in trades mode with 0 trades, show it.
+            if (simMode === 'single') {
+                const res = await runSimulation({
+                    ...config,
+                    symbol: symbol,
+                    basePrice: parseFloat(config.basePrice),
+                    gridStep: parseFloat(config.gridStep),
+                    amountPerGrid: parseFloat(config.amountPerGrid),
+                    commissionRate: parseFloat(config.commissionRate),
+                    minCommission: parseFloat(config.minCommission)
+                });
+                console.log("Simulation Result:", res);
+                setResult(res);
+                setBatchResult(null);
+            } else {
+                // We use dynamic imports or exist import for runBatchSimulation
+                // Need to ensure runBatchSimulation is imported at the top!
+                const payload = {
+                    ...config,
+                    symbol: symbol,
+                    basePrice: parseFloat(config.basePrice),
+                    minStep: parseFloat(config.minStep),
+                    maxStep: parseFloat(config.maxStep),
+                    stepInterval: parseFloat(config.stepInterval),
+                    amountPerGrid: parseFloat(config.amountPerGrid),
+                    commissionRate: parseFloat(config.commissionRate),
+                    minCommission: parseFloat(config.minCommission),
+                    initialShares: parseInt(config.initialShares) || 0
+                };
+                console.log("Sending Batch Request:", payload);
+                const res = await runBatchSimulation(payload);
+                console.log("Batch Simulation Result:", res);
+                // Sort by Step ascending
+                const sortedRes = res.sort((a, b) => a.step - b.step);
+
+                // Find the index of the highest profit to highlight it
+                const maxProfit = Math.max(...sortedRes.map(r => r.totalProfit));
+                const highlightRes = sortedRes.map(r => ({
+                    ...r,
+                    isBest: r.totalProfit === maxProfit
+                }));
+
+                setBatchResult(highlightRes);
+                setResult(null);
+            }
         } catch (err) {
             console.error(err);
             alert("Simulation failed: " + err.message);
@@ -109,9 +155,25 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
         <div className="flex flex-col gap-6 h-full pb-12">
             {/* Control Bar */}
             <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl shrink-0 relative z-30">
-                <div className="flex items-center gap-2 text-indigo-400 font-semibold border-b border-white/5 pb-4 mb-6">
-                    <Calculator className="w-5 h-5" />
-                    <span className="text-lg">网格交易策略回测</span>
+                <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-6">
+                    <div className="flex items-center gap-2 text-indigo-400 font-semibold">
+                        <Calculator className="w-5 h-5" />
+                        <span className="text-lg">网格交易策略回测</span>
+                    </div>
+                    <div className="flex bg-black/30 rounded-lg p-1 border border-white/5">
+                        <button
+                            onClick={() => setSimMode('single')}
+                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${simMode === 'single' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                            单次测算
+                        </button>
+                        <button
+                            onClick={() => setSimMode('batch')}
+                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${simMode === 'batch' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                            参数优化 (批量)
+                        </button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-6">
@@ -158,25 +220,53 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">网格步长 (Step)</label>
-                        <div className="flex gap-2">
-                            <select
-                                className="bg-black/20 border border-white/10 rounded-xl px-2 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 w-28 text-xs"
-                                value={config.gridStepType}
-                                onChange={e => setConfig({ ...config, gridStepType: e.target.value })}
-                            >
-                                <option value="percent" className="bg-slate-900">百分比 (%)</option>
-                                <option value="absolute" className="bg-slate-900">绝对值 (元)</option>
-                            </select>
-                            <input
-                                type="number" step={config.gridStepType === 'percent' ? 0.1 : 0.001}
-                                className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
-                                value={config.gridStep}
-                                onChange={e => setConfig({ ...config, gridStep: e.target.value })}
-                            />
+                    {simMode === 'single' ? (
+                        <div className="flex flex-col gap-2">
+                            <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">网格步长 (Step)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    className="bg-black/20 border border-white/10 rounded-xl px-2 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 w-28 text-xs"
+                                    value={config.gridStepType}
+                                    onChange={e => setConfig({ ...config, gridStepType: e.target.value })}
+                                >
+                                    <option value="percent" className="bg-slate-900">百分比 (%)</option>
+                                    <option value="absolute" className="bg-slate-900">绝对值 (元)</option>
+                                </select>
+                                <input
+                                    type="number" step={config.gridStepType === 'percent' ? 0.1 : 0.001}
+                                    className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
+                                    value={config.gridStep}
+                                    onChange={e => setConfig({ ...config, gridStep: e.target.value })}
+                                />
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="flex flex-col gap-2">
+                            <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">步长范围优化 (%)</label>
+                            <div className="flex gap-2 items-center">
+                                <input
+                                    type="number" step="0.1" title="最小值" placeholder="Min"
+                                    className="flex-1 w-0 bg-black/20 border border-white/10 rounded-xl px-2 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm text-center"
+                                    value={config.minStep}
+                                    onChange={e => setConfig({ ...config, minStep: e.target.value })}
+                                />
+                                <span className="text-slate-500">-</span>
+                                <input
+                                    type="number" step="0.1" title="最大值" placeholder="Max"
+                                    className="flex-1 w-0 bg-black/20 border border-white/10 rounded-xl px-2 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm text-center"
+                                    value={config.maxStep}
+                                    onChange={e => setConfig({ ...config, maxStep: e.target.value })}
+                                />
+                                <span className="text-slate-500">间隔</span>
+                                <input
+                                    type="number" step="0.05" title="步幅" placeholder="Step"
+                                    className="flex-1 w-0 bg-black/20 border border-white/10 rounded-xl px-2 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm text-center"
+                                    value={config.stepInterval}
+                                    onChange={e => setConfig({ ...config, stepInterval: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex gap-4">
                         <div className="flex-1 flex flex-col gap-2">
@@ -247,14 +337,77 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             disabled={loading}
                             className="w-full h-[46px] bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex justify-center items-center gap-2 active:scale-95"
                         >
-                            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <><Play className="w-4 h-4 fill-current" /> 开始跑测</>}
+                            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <><Play className="w-4 h-4 fill-current" /> {simMode === 'single' ? '开始跑测' : '开始批量优化'}</>}
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* Results Area */}
-            {result && (
+            {/* Batch Results Area */}
+            {batchResult && (
+                <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
+                        <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2 text-indigo-400 font-semibold">
+                                <List className="w-5 h-5" />
+                                <span className="text-lg">网格步长优化结果 (按步长增序)</span>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto relative min-h-0">
+                            <table className="w-full text-left text-sm text-slate-300">
+                                <thead className="bg-slate-900/50 sticky top-0 backdrop-blur-md z-10 text-xs uppercase tracking-wider font-semibold text-slate-500">
+                                    <tr>
+                                        <th className="px-6 py-4">网格步长</th>
+                                        <th className="px-6 py-4 text-right">网格收益</th>
+                                        <th className="px-6 py-4 text-right">底仓及浮动盈亏</th>
+                                        <th className="px-6 py-4 text-right">策略总利润</th>
+                                        <th className="px-6 py-4 text-right">期末持仓</th>
+                                        <th className="px-6 py-4 text-right">最大回撤</th>
+                                        <th className="px-6 py-4 text-right">夏普比率</th>
+                                        <th className="px-6 py-4 text-right">成交次数</th>
+                                        <th className="px-6 py-4 text-right">网格胜率</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5 font-mono">
+                                    {batchResult.map((res, idx) => (
+                                        <tr key={idx} className={`hover:bg-white/5 transition-colors ${res.isBest ? 'bg-indigo-500/10' : ''}`}>
+                                            <td className="px-6 py-4 text-slate-100 font-bold flex items-center gap-2">
+                                                {res.step.toFixed(2)}{config.gridStepType === 'percent' ? '%' : '元'}
+                                                {res.isBest && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">最高利润</span>}
+                                            </td>
+                                            <td className={`px-6 py-4 text-right ${res.gridProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                ¥{res.gridProfit?.toFixed(2)}
+                                            </td>
+                                            <td className={`px-6 py-4 text-right ${res.floatProfit > 0 ? 'text-emerald-400' : res.floatProfit < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                                ¥{res.floatProfit?.toFixed(2)}
+                                            </td>
+                                            <td className={`px-6 py-4 text-right font-bold ${res.totalProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                ¥{res.totalProfit?.toFixed(2)}
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-mono">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-slate-200">{res.netPosition} 股</span>
+                                                    {res.netPosition > (config.initialShares || 0) && <span className="text-xs text-rose-400">+{(res.netPosition - (config.initialShares || 0))} 放仓</span>}
+                                                    {res.netPosition < (config.initialShares || 0) && <span className="text-xs text-emerald-400">{(res.netPosition - (config.initialShares || 0))} 收仓</span>}
+                                                    {res.netPosition === (config.initialShares || 0) && <span className="text-xs text-slate-500">持平</span>}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-right text-rose-400">{res.maxDrawdown?.toFixed(2)}%</td>
+                                            <td className="px-6 py-4 text-right text-violet-400">{res.sharpeRatio?.toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-right text-slate-400">{res.totalTx}</td>
+                                            <td className="px-6 py-4 text-right text-slate-400">{res.winRate?.toFixed(1)}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Single Results Area */}
+            {result && simMode === 'single' && (
                 <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     {/* Advanced Metrics Row */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">

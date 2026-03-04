@@ -47,6 +47,11 @@ export const runSimulation = async (config) => {
     return response.data;
 };
 
+export const runBatchSimulation = async (config) => {
+    const response = await api.post('/simulate/batch', config);
+    return response.data.data;
+};
+
 export const getSymbols = async () => {
     const response = await api.get('/symbols');
     return response.data.data;
