@@ -293,7 +293,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                     </div>
 
                     {/* Extended Row for Annualized */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-6 shrink-0">
                         <StatCard
                             icon={<TrendingUp />}
                             label="年化收益 (CAGR)"
@@ -302,7 +302,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             color={(result.cagr || 0) >= 0 ? "text-emerald-400" : "text-slate-400"}
                             tooltip="复合年均增长率。它是将短期的区间收益『放大』到一年长度的结果。如果回测天数很少，该数值会显得非常激进（正负都会放大），仅供横向对比参考。"
                         />
-                        <StatCard icon={<DollarSign />} label="网格利润 (已实现)" value={(result.totalProfit || 0).toFixed(2)} unit="CNY" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="这仅仅是已经完成买卖对冲的网格利润，不包含您当前手中持仓的浮动盈亏。" />
+                        <StatCard icon={<DollarSign />} label="网格利润 (已实现)" value={(result.totalProfit || 0).toFixed(2)} unit="元" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="这仅仅是已经完成买卖对冲的网格利润，不包含您当前手中持仓的浮动盈亏。" />
+                        <StatCard icon={<TrendingUp />} label="当前浮动盈亏" value={(result.totalFloating || 0).toFixed(2)} unit="元" color={(result.totalFloating || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="由于目前持有底仓及网格沉淀仓位，因价格上涨或下跌而产生的未实现盈亏。" />
+                        <StatCard icon={<DollarSign />} label="策略总利润" value={(result.totalYieldAmount || 0).toFixed(2)} unit="元" color={(result.totalYieldAmount || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="包含网格已确定的利润和当前持仓的浮动盈亏总和。这是您账户在这个周期内的真实绝对收益。" />
                         <StatCard icon={<MoveHorizontal />} label="当前持仓" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
                         <StatCard icon={<RefreshCw />} label="成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
                     </div>
@@ -341,7 +343,8 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                             <th className="px-6 py-4 text-right">买入次数</th>
                                             <th className="px-6 py-4 text-right">卖出次数</th>
                                             <th className="px-6 py-4 text-right">佣金</th>
-                                            <th className="px-6 py-4 text-right">每日盈亏</th>
+                                            <th className="px-6 py-4 text-right">网格利润</th>
+                                            <th className="px-6 py-4 text-right">每日总盈亏</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5 font-mono">
@@ -352,14 +355,17 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                                 <td className="px-6 py-4 text-right text-emerald-500 font-bold">{stat.buyCount || '-'}</td>
                                                 <td className="px-6 py-4 text-right text-rose-500 font-bold">{stat.sellCount || '-'}</td>
                                                 <td className="px-6 py-4 text-right text-amber-500/70">{stat.commission?.toFixed(2)}</td>
+                                                <td className={`px-6 py-4 text-right font-bold ${stat.realizedProfit > 0 ? 'text-emerald-400' : stat.realizedProfit < 0 ? 'text-rose-400' : 'text-slate-600'}`}>
+                                                    {stat.realizedProfit !== 0 && stat.realizedProfit !== undefined ? stat.realizedProfit?.toFixed(2) : '-'}
+                                                </td>
                                                 <td className={`px-6 py-4 text-right font-bold ${stat.netProfit > 0 ? 'text-emerald-400' : stat.netProfit < 0 ? 'text-rose-400' : 'text-slate-600'}`}>
-                                                    {stat.netProfit !== 0 ? stat.netProfit?.toFixed(2) : '-'}
+                                                    {stat.netProfit !== 0 && stat.netProfit !== undefined ? stat.netProfit?.toFixed(2) : '-'}
                                                 </td>
                                             </tr>
                                         ))}
                                         {(!result.dailyStats || result.dailyStats.length === 0) && (
                                             <tr>
-                                                <td colSpan="6" className="px-6 py-12 text-center text-slate-500 italic">
+                                                <td colSpan="7" className="px-6 py-12 text-center text-slate-500 italic">
                                                     所选周期内无交易产生，请尝试调整基准价格或减小网格步长。
                                                 </td>
                                             </tr>

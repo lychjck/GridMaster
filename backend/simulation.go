@@ -23,15 +23,16 @@ type SimConfig struct {
 }
 
 type DailyStat struct {
-	Date        string  `json:"date"`
-	BuyCount    int     `json:"buyCount"`
-	SellCount   int     `json:"sellCount"`
-	GrossProfit float64 `json:"grossProfit"` // Realized profit
-	Commission  float64 `json:"commission"`
-	Value       float64 `json:"value"` // Market Value of Position (Initial + Net)
-	NetProfit   float64 `json:"netProfit"`
-	ClosePrice  float64 `json:"closePrice"`
-	NetValue    float64 `json:"netValue"` // Daily Net Asset Value (Cash + Stock Market Value)
+	Date           string  `json:"date"`
+	BuyCount       int     `json:"buyCount"`
+	SellCount      int     `json:"sellCount"`
+	GrossProfit    float64 `json:"grossProfit"` // Realized profit
+	Commission     float64 `json:"commission"`
+	Value          float64 `json:"value"` // Market Value of Position (Initial + Net)
+	RealizedProfit float64 `json:"realizedProfit"`
+	NetProfit      float64 `json:"netProfit"` // Daily M2M PnL
+	ClosePrice     float64 `json:"closePrice"`
+	NetValue       float64 `json:"netValue"` // Daily Net Asset Value (Cash + Stock Market Value)
 }
 
 type Trade struct {
@@ -43,13 +44,15 @@ type Trade struct {
 }
 
 type SimResult struct {
-	TotalProfit float64     `json:"totalProfit"`
-	TotalTx     int         `json:"totalTx"`
-	TotalComm   float64     `json:"totalComm"`
-	NetPosition float64     `json:"netPosition"`
-	DailyStats  []DailyStat `json:"dailyStats"`
-	Trades      []Trade     `json:"trades"`
-	ChartData   []Kline     `json:"chartData"`
+	TotalProfit      float64     `json:"totalProfit"`
+	TotalYieldAmount float64     `json:"totalYieldAmount"` // Total Strategy PnL
+	TotalFloating    float64     `json:"totalFloating"`    // Floating PnL
+	TotalTx          int         `json:"totalTx"`
+	TotalComm        float64     `json:"totalComm"`
+	NetPosition      float64     `json:"netPosition"`
+	DailyStats       []DailyStat `json:"dailyStats"`
+	Trades           []Trade     `json:"trades"`
+	ChartData        []Kline     `json:"chartData"`
 
 	// Advanced Metrics
 	MaxDrawdown     float64 `json:"maxDrawdown"` // Percentage (e.g., -0.15 for -15%)
@@ -182,103 +185,114 @@ func runSimulation(c *gin.Context) {
 		stat := dailyStatsMap[date]
 		stat.ClosePrice = RoundTo3(k.Close) // Update close
 
-		// Check Buy Down
-		for {
-			nextBuyIndex := lastExecIndex - 1
-			var nextBuyPrice float64
-
-			if config.GridStepType == "absolute" {
-				nextBuyPrice = config.BasePrice + float64(nextBuyIndex)*stepValue
-			} else {
-				nextBuyPrice = config.BasePrice * (1 + float64(nextBuyIndex)*stepValue)
-			}
-
-			triggered := false
-			if config.UsePenetration {
-				triggered = k.Low < nextBuyPrice
-			} else {
-				triggered = k.Low <= nextBuyPrice
-			}
-
-			if triggered {
-				cost := nextBuyPrice * config.AmountPerGrid
-				comm := math.Max(cost*config.CommissionRate, config.MinCommission)
-
-				if cost > 0 {
-					stat.BuyCount++
-					stat.Commission += comm
-					lastExecIndex = nextBuyIndex
-
-					// Update Portfolio
-					currentCash -= (cost + comm)
-					currentPos += config.AmountPerGrid
-					if currentCash < minCash {
-						minCash = currentCash
-					}
-
-					result.Trades = append(result.Trades, Trade{
-						Time:   k.Timestamp,
-						Type:   "BUY",
-						Price:  RoundTo3(nextBuyPrice),
-						Amount: config.AmountPerGrid,
-						Comm:   RoundTo3(comm),
-					})
-				} else {
-					break
-				}
-			} else {
-				break
-			}
+		// Run two passes based on likely intra-minute movement to capture oscillations
+		// Open <= Close (Green): Assume Open -> Low -> High -> Close (Buy then Sell)
+		// Open > Close (Red): Assume Open -> High -> Low -> Close (Sell then Buy)
+		passes := []string{"B", "S"}
+		if k.Open > k.Close {
+			passes = []string{"S", "B"}
 		}
 
-		// Check Sell Up
-		for {
-			nextSellIndex := lastExecIndex + 1
-			var nextSellPrice float64
-			var buyPrice float64
+		for _, pType := range passes {
+			if pType == "B" {
+				// Check Buy Down
+				for {
+					nextBuyIndex := lastExecIndex - 1
+					var nextBuyPrice float64
 
-			if config.GridStepType == "absolute" {
-				nextSellPrice = config.BasePrice + float64(nextSellIndex)*stepValue
-				buyPrice = config.BasePrice + float64(nextSellIndex-1)*stepValue
+					if config.GridStepType == "absolute" {
+						nextBuyPrice = RoundTo3(config.BasePrice + float64(nextBuyIndex)*stepValue)
+					} else {
+						nextBuyPrice = RoundTo3(config.BasePrice * (1 + float64(nextBuyIndex)*stepValue))
+					}
+
+					triggered := false
+					if config.UsePenetration {
+						triggered = RoundTo3(k.Low) < nextBuyPrice-0.00001
+					} else {
+						triggered = RoundTo3(k.Low) <= nextBuyPrice+0.00001
+					}
+
+					if triggered {
+						cost := nextBuyPrice * config.AmountPerGrid
+						comm := math.Max(cost*config.CommissionRate, config.MinCommission)
+
+						if cost > 0 {
+							stat.BuyCount++
+							stat.Commission += comm
+							lastExecIndex = nextBuyIndex
+
+							// Update Portfolio
+							currentCash -= (cost + comm)
+							currentPos += config.AmountPerGrid
+							if currentCash < minCash {
+								minCash = currentCash
+							}
+
+							result.Trades = append(result.Trades, Trade{
+								Time:   k.Timestamp,
+								Type:   "BUY",
+								Price:  RoundTo3(nextBuyPrice),
+								Amount: config.AmountPerGrid,
+								Comm:   RoundTo3(comm),
+							})
+						} else {
+							break
+						}
+					} else {
+						break
+					}
+				}
 			} else {
-				nextSellPrice = config.BasePrice * (1 + float64(nextSellIndex)*stepValue)
-				buyPrice = config.BasePrice * (1 + float64(nextSellIndex-1)*stepValue)
-			}
+				// Check Sell Up
+				for {
+					nextSellIndex := lastExecIndex + 1
+					var nextSellPrice float64
+					var buyPrice float64
 
-			triggered := false
-			if config.UsePenetration {
-				triggered = k.High > nextSellPrice
-			} else {
-				triggered = k.High >= nextSellPrice
-			}
+					if config.GridStepType == "absolute" {
+						nextSellPrice = RoundTo3(config.BasePrice + float64(nextSellIndex)*stepValue)
+						buyPrice = RoundTo3(config.BasePrice + float64(nextSellIndex-1)*stepValue)
+					} else {
+						nextSellPrice = RoundTo3(config.BasePrice * (1 + float64(nextSellIndex)*stepValue))
+						buyPrice = RoundTo3(config.BasePrice * (1 + float64(nextSellIndex-1)*stepValue))
+					}
 
-			if triggered {
-				revenue := nextSellPrice * config.AmountPerGrid
-				comm := math.Max(revenue*config.CommissionRate, config.MinCommission)
+					triggered := false
+					if config.UsePenetration {
+						triggered = RoundTo3(k.High) > nextSellPrice+0.00001
+					} else {
+						triggered = RoundTo3(k.High) >= nextSellPrice-0.00001
+					}
 
-				stat.SellCount++
-				stat.Commission += comm
+					if triggered {
+						revenue := nextSellPrice * config.AmountPerGrid
+						comm := math.Max(revenue*config.CommissionRate, config.MinCommission)
 
-				// Realized Profit for this pair
-				gross := (nextSellPrice - buyPrice) * config.AmountPerGrid
-				stat.GrossProfit += gross
+						stat.SellCount++
+						stat.Commission += comm
 
-				lastExecIndex = nextSellIndex
+						// Realized Profit for this pair
+						gross := (nextSellPrice - buyPrice) * config.AmountPerGrid
+						stat.GrossProfit += gross
 
-				// Update Portfolio
-				currentCash += (revenue - comm)
-				currentPos -= config.AmountPerGrid
-				// Selling increases cash, so minCash usually won't change here unless negative revenue (impossible)
+						lastExecIndex = nextSellIndex
 
-				result.Trades = append(result.Trades, Trade{
-					Time:   k.Timestamp,
-					Type:   "SELL",
-					Price:  RoundTo3(nextSellPrice),
-					Amount: config.AmountPerGrid,
-					Comm:   RoundTo3(comm),
-				})
-			} else {
-				break
+						// Update Portfolio
+						currentCash += (revenue - comm)
+						currentPos -= config.AmountPerGrid
+
+						result.Trades = append(result.Trades, Trade{
+							Time:   k.Timestamp,
+							Type:   "SELL",
+							Price:  RoundTo3(nextSellPrice),
+							Amount: config.AmountPerGrid,
+							Comm:   RoundTo3(comm),
+						})
+					} else {
+						break
+					}
+				}
 			}
 		}
 
@@ -302,12 +316,12 @@ func runSimulation(c *gin.Context) {
 	}
 
 	for _, s := range dailyStatsMap {
-		s.NetProfit = RoundTo3(s.GrossProfit - s.Commission)
+		s.RealizedProfit = RoundTo3(s.GrossProfit - s.Commission)
 		s.GrossProfit = RoundTo3(s.GrossProfit)
 		s.Commission = RoundTo3(s.Commission)
 		sortedStats = append(sortedStats, *s)
 
-		result.TotalProfit += s.NetProfit
+		result.TotalProfit += s.RealizedProfit
 		result.TotalTx += (s.BuyCount + s.SellCount)
 		result.TotalComm += s.Commission
 		totalBuyCount += s.BuyCount
@@ -324,8 +338,10 @@ func runSimulation(c *gin.Context) {
 	maxEquity := initialCapital
 	minEquity := initialCapital
 	maxDrawdown := 0.0
+	var lastEquity float64 = initialCapital
 
-	for _, s := range sortedStats {
+	for i := range sortedStats {
+		s := &sortedStats[i]
 		// Convert "NetValue PnL" to "Total Equity"
 		// NetValue from sim is (CashChange + StockValue).
 		// Equity = Initial Investment (Cash Outlay) + NetValue (PnL + Position Value + InitialPosValueChange?)
@@ -365,6 +381,9 @@ func runSimulation(c *gin.Context) {
 		// Total Equity = initialCapital + s.NetValue + InitialPosPnL.
 		InitialPosPnL := float64(config.InitialShares) * (s.ClosePrice - preClosePrice)
 		equity := initialCapital + s.NetValue + InitialPosPnL
+
+		s.NetProfit = RoundTo3(equity - lastEquity)
+		lastEquity = equity
 
 		// Max Drawdown Calculation
 		if equity > maxEquity {
@@ -465,9 +484,11 @@ func runSimulation(c *gin.Context) {
 	}
 
 	// 5. Period Return (Un-annualized Strategy Yield)
-	if initialCapital > 0 {
+	if initialCapital > 0 && len(dailyNetValues) > 0 {
 		finalEquity := dailyNetValues[len(dailyNetValues)-1]
 		result.PeriodReturn = RoundTo3((finalEquity/initialCapital - 1) * 100)
+		result.TotalYieldAmount = RoundTo3(finalEquity - initialCapital)
+		result.TotalFloating = RoundTo3(result.TotalYieldAmount - result.TotalProfit)
 	}
 
 	// 6. Benchmark Return (Stock Price Change relative to Pre-Close)

@@ -228,16 +228,55 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
         if (gridStep && initialPrice) {
             const base = parseFloat(initialPrice);
-            const baseOverlapsClose = Math.abs(base - dayClose) < 0.0001;
+            const step = gridStepUnit === 'value' ? gridStep : (base * gridStep / 100);
 
+            // Dynamically generate grid lines that are within [yMin, yMax]
+            // Draw up from base
+            for (let i = 1; i < 20; i++) {
+                const level = base + i * step;
+                if (level > yMax) break;
+                gridChartLines.push({
+                    yAxis: level,
+                    label: { show: false },
+                    lineStyle: {
+                        color: 'rgba(255, 255, 255, 0.15)',
+                        type: 'dashed',
+                        width: 1
+                    }
+                });
+            }
+
+            // Draw down from base
+            for (let i = 1; i < 20; i++) {
+                const level = base - i * step;
+                if (level < yMin) break;
+                gridChartLines.push({
+                    yAxis: level,
+                    label: { show: false },
+                    lineStyle: {
+                        color: 'rgba(255, 255, 255, 0.15)',
+                        type: 'dashed',
+                        width: 1
+                    }
+                });
+            }
+
+            // Always add the base line (if not overlapping with close which is already highlighted)
+            const baseOverlapsClose = Math.abs(base - dayClose) < 0.0001;
             if (!baseOverlapsClose) {
                 gridChartLines.push({
                     yAxis: base,
-                    label: { show: false },
+                    label: {
+                        show: true,
+                        formatter: '基准',
+                        position: 'end',
+                        color: '#a855f7',
+                        fontSize: 10
+                    },
                     lineStyle: {
-                        color: 'rgba(255, 255, 255, 0.3)',
+                        color: 'rgba(168, 85, 247, 0.4)',
                         type: 'solid',
-                        width: 1
+                        width: 2
                     }
                 });
             }
