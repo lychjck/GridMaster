@@ -43,6 +43,7 @@ const Dashboard = () => {
     // UI Tab State
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
     const [showGridLines, setShowGridLines] = useState(localStorage.getItem('showGridLines') !== 'false');
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(localStorage.getItem('autoRefreshEnabled') !== 'false');
 
     // Theme Panel
     const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -178,8 +179,8 @@ const Dashboard = () => {
 
     // 自动刷新机制：仅在未进行模拟且查看当日图表时运行
     useEffect(() => {
-        // 如果处于网格回测标签页，或者图表上正在显示回测点位，则不要刷新以保护回测数据
-        if (activeTab === 'simulation' || showLiveTrades) return;
+        // 如果自动刷新被禁用，或者处于网格回测标签页，或者图表上正在显示回测点位，则不要刷新
+        if (!autoRefreshEnabled || activeTab === 'simulation' || showLiveTrades) return;
 
         // 仅在查看当日数据时自动刷新
         const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
@@ -187,7 +188,7 @@ const Dashboard = () => {
 
         const interval = setInterval(fetchData, 5000); // 5秒轮询实现“伪实时”盯盘
         return () => clearInterval(interval);
-    }, [selectedDate, selectedSymbol, availableDates, activeTab, showLiveTrades]);
+    }, [selectedDate, selectedSymbol, availableDates, activeTab, showLiveTrades, autoRefreshEnabled]);
 
     // Sync state to localStorage
     useEffect(() => { localStorage.setItem('selectedSymbol', selectedSymbol); }, [selectedSymbol]);
@@ -196,6 +197,7 @@ const Dashboard = () => {
     useEffect(() => { localStorage.setItem('gridStepUnit', gridStepUnit); }, [gridStepUnit]);
     useEffect(() => { localStorage.setItem('initialPrice', initialPrice); }, [initialPrice]);
     useEffect(() => { localStorage.setItem('showGridLines', showGridLines); }, [showGridLines]);
+    useEffect(() => { localStorage.setItem('autoRefreshEnabled', autoRefreshEnabled); }, [autoRefreshEnabled]);
 
     // Clear simulation markers IF AND ONLY IF asset or date changes, NOT for every fetch
     useEffect(() => {
@@ -581,6 +583,30 @@ const Dashboard = () => {
                             </>
                         )}
                     </div>
+
+                    <button
+                        onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+                        className={`p-2.5 rounded-xl border transition-all active:scale-95 duration-200 group relative flex items-center gap-2 ${autoRefreshEnabled
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                            : 'bg-white/5 border-white/5 text-slate-500 hover:text-slate-400 hover:bg-white/10'
+                            }`}
+                        title={autoRefreshEnabled ? "点击关闭自动刷新" : "点击开启自动刷新"}
+                    >
+                        <div className="relative">
+                            <RefreshCw className={`w-5 h-5 ${autoRefreshEnabled ? 'animate-spin-slow' : ''}`} />
+                            {!autoRefreshEnabled && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-5 h-0.5 bg-slate-500 rotate-45 rounded-full" />
+                                </div>
+                            )}
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider hidden lg:inline">
+                            {autoRefreshEnabled ? 'Auto On' : 'Auto Off'}
+                        </span>
+                        {autoRefreshEnabled && (
+                            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                        )}
+                    </button>
 
                     <button
                         onClick={handleRefresh}
