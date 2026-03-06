@@ -100,25 +100,22 @@ func main() {
 			return
 		}
 
-		// Trigger Python Script Asynchronously
-		go func(symbol string) {
-			cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", symbol, "--count", "800")
-			cmd.Dir = "../" // Scripts are in ../scripts relative to backend binary if running from backend dir?
-			// Wait, we run backend from root usually or backend dir.
-			// User runs `go run .` in `backend`. script is in `scripts`. root is `..`.
-			// So command should be `uv run scripts/fetch_data_mootdx.py` from root?
-			// Let's assume content root. If running from backend folder:
-			cmd.Dir = ".."
-			// Output capturing for debug
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				log.Printf("Error fetching data for %s: %v\nOutput: %s", symbol, err, string(out))
-			} else {
-				log.Printf("Successfully fetched data for %s", symbol)
-			}
-		}(req.Symbol)
+		// Trigger Python Script Synchronously
+		var cmd *exec.Cmd
+		if req.Symbol == "XAU" {
+			cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+		} else {
+			cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", req.Symbol, "--count", "800")
+		}
+		cmd.Dir = ".."
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error fetching data for %s: %v\nOutput: %s", req.Symbol, err, string(out))
+		} else {
+			log.Printf("Successfully fetched data for %s", req.Symbol)
+		}
 
-		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started", "symbol": req.Symbol})
+		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch completed", "symbol": req.Symbol})
 	})
 
 	// POST /api/refresh - Trigger manual data refresh
@@ -130,21 +127,26 @@ func main() {
 			return
 		}
 
-		go func(symbol string) {
+		// Trigger Python Script Synchronously
+		var cmd *exec.Cmd
+		if req.Symbol == "XAU" {
+			cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+		} else {
 			// Reuse the same script logic
 			// Using --force is NOT recommended for refresh as we want incremental.
 			// So just call it normally, it has smart stitching.
-			cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", symbol, "--count", "800")
-			cmd.Dir = ".."
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				log.Printf("Error refreshing data for %s: %v\nOutput: %s", symbol, err, string(out))
-			} else {
-				log.Printf("Successfully refreshed data for %s", symbol)
-			}
-		}(req.Symbol)
+			cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", req.Symbol, "--count", "800")
+		}
+		cmd.Dir = ".."
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error refreshing data for %s: %v\nOutput: %s", req.Symbol, err, string(out))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to refresh data", "details": string(out)})
+			return
+		}
+		log.Printf("Successfully refreshed data for %s", req.Symbol)
 
-		c.JSON(http.StatusOK, gin.H{"message": "Refresh started", "symbol": req.Symbol})
+		c.JSON(http.StatusOK, gin.H{"message": "Refresh completed", "symbol": req.Symbol})
 	})
 
 	r.GET("/api/dates", func(c *gin.Context) {

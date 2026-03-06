@@ -39,7 +39,7 @@ export const getAvailableDates = async (symbol = '') => {
         ? `/dates?symbol=${symbol}&_t=${Date.now()}`
         : `/dates?_t=${Date.now()}`;
     const response = await api.get(url);
-    return response.data.data;
+    return response.data.data || [];
 };
 
 export const runSimulation = async (config) => {

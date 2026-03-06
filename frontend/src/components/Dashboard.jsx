@@ -90,14 +90,12 @@ const Dashboard = () => {
         setAddingLoading(true);
         try {
             await addSymbol(newSymbol);
-            setTimeout(async () => {
-                await fetchSymbols();
-                setSelectedSymbol(newSymbol);
-                setIsAdding(false);
-                setNewSymbol('');
-                setAddingLoading(false);
-                setIsAssetSwitcherOpen(false); // Close dropdown
-            }, 2000);
+            await fetchSymbols();
+            setSelectedSymbol(newSymbol);
+            setIsAdding(false);
+            setNewSymbol('');
+            setAddingLoading(false);
+            setIsAssetSwitcherOpen(false); // Close dropdown
         } catch (e) {
             alert("添加失败: " + e.message);
             setAddingLoading(false);
@@ -177,6 +175,48 @@ const Dashboard = () => {
         fetchData();
     }, [selectedDate, selectedSymbol, availableDates]);
 
+    // 3. Background Fetch for Auto Refresh (Silent, no loading indicator)
+    const backgroundFetchData = async () => {
+        if (!selectedDate) return;
+        try {
+            const [klines, dailies] = await Promise.all([
+                getKlines(selectedDate, selectedSymbol),
+                getDailyKlines(selectedDate, selectedSymbol)
+            ]);
+
+            setData(klines);
+            setCurrentDayInfo(dailies.length > 0 ? dailies[0] : null);
+
+            // Fetch Pre-Close (Yesterday's Close)
+            let preCloseVal = null;
+            if (availableDates.length > 0) {
+                const idx = availableDates.indexOf(selectedDate);
+                if (idx > 0) {
+                    const prevDate = availableDates[idx - 1];
+                    try {
+                        const prevDailies = await getDailyKlines(prevDate, selectedSymbol);
+                        if (prevDailies.length > 0) {
+                            preCloseVal = prevDailies[0].close;
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch pre-close", e);
+                    }
+                } else if (dailies.length > 0 && dailies[0].pre_close) {
+                    preCloseVal = dailies[0].pre_close;
+                }
+            }
+            setPreClose(preCloseVal);
+
+            if (klines.length > 0 && !initialPrice) {
+                setInitialPrice(klines[0].open.toFixed(3));
+            }
+
+            calculateStats(klines);
+        } catch (err) {
+            console.error("Background fetch failed", err);
+        }
+    };
+
     // 自动刷新机制：仅在未进行模拟且查看当日图表时运行
     useEffect(() => {
         // 如果自动刷新被禁用，或者处于网格回测标签页，或者图表上正在显示回测点位，则不要刷新
@@ -186,7 +226,7 @@ const Dashboard = () => {
         const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
         if (selectedDate !== todayStr) return;
 
-        const interval = setInterval(fetchData, 5000); // 5秒轮询实现“伪实时”盯盘
+        const interval = setInterval(backgroundFetchData, 60000); // 60秒轮询，因为后端数据通常是分钟级的
         return () => clearInterval(interval);
     }, [selectedDate, selectedSymbol, availableDates, activeTab, showLiveTrades, autoRefreshEnabled]);
 
@@ -299,30 +339,22 @@ const Dashboard = () => {
         setLoading(true);
         try {
             await refreshData(selectedSymbol);
-            // Wait a bit for backend script to finish (though it's async, we just ack start)
-            // Ideally backend should wait but we made it async. 
-            // Let's polling or just wait fixed time to allow script some headstart
-            setTimeout(async () => {
-                // Refresh available dates and switch to latest
-                try {
-                    const dates = await getAvailableDates(selectedSymbol);
-                    setAvailableDates(dates);
-                    if (dates.length > 0) {
-                        const latest = dates[dates.length - 1];
-                        if (latest !== selectedDate) {
-                            setSelectedDate(latest);
-                        } else {
-                            // If date explains same, just fetch data
-                            fetchData();
-                        }
-                    }
-                } catch (err) {
-                    console.error("Refresh dates failed", err);
+            // Refresh available dates and switch to latest
+            const dates = await getAvailableDates(selectedSymbol);
+            setAvailableDates(dates);
+            if (dates.length > 0) {
+                const latest = dates[dates.length - 1];
+                if (latest !== selectedDate) {
+                    setSelectedDate(latest);
+                } else {
+                    // If date explains same, just fetch data
+                    fetchData();
                 }
-            }, 2000);
+            }
         } catch (e) {
             console.error("Refresh failed", e);
             alert("刷新失败: " + e.message);
+        } finally {
             setLoading(false);
         }
     };
