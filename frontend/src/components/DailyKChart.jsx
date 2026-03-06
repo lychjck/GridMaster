@@ -55,8 +55,10 @@ const DailyKChart = ({ symbol, startDate }) => {
 
         setCustomReturn({
             days,
-            pastDate: data[pastIdx].timestamp.slice(0, 10),
-            latestDate: data[latestIdx].timestamp.slice(0, 10),
+            pastDate: data[pastIdx].timestamp.slice(5, 10), // MM-DD
+            latestDate: data[latestIdx].timestamp.slice(5, 10),
+            pastPrice: pastPrice.toFixed(3),
+            latestPrice: latestPrice.toFixed(3),
             value: ret
         });
     }, [customDays, data]);
@@ -349,10 +351,22 @@ const DailyKChart = ({ symbol, startDate }) => {
                     <span className="text-xs font-medium text-slate-400 mr-2">交易日涨幅:</span>
 
                     {customReturn ? (
-                        <div className="flex flex-col">
+                        <div className="flex items-center gap-3">
                             <span className={`text-sm font-bold ${customReturn.value >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                                 {customReturn.value > 0 ? '+' : ''}{customReturn.value.toFixed(2)}%
                             </span>
+                            <div className="flex flex-col border-l border-white/5 pl-3 leading-tight">
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono">
+                                    <span>{customReturn.pastDate}</span>
+                                    <span className="text-slate-700">({customReturn.pastPrice})</span>
+                                    <span className="text-slate-600">→</span>
+                                    <span>{customReturn.latestDate}</span>
+                                    <span className="text-slate-700">({customReturn.latestPrice})</span>
+                                </div>
+                                <span className="text-[9px] text-slate-600 uppercase tracking-tighter">
+                                    {customReturn.days === 1 ? '当日涨幅 (Daily)' : `${customReturn.days}日累计 (Cumulative)`}
+                                </span>
+                            </div>
                         </div>
                     ) : (
                         <span className="text-sm font-bold text-slate-600">--%</span>
