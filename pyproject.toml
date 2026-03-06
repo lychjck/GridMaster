@@ -5,6 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "akshare>=1.18.35",
+    "binance-connector>=3.12.0",
     "mootdx>=0.11.7",
     "pandas>=3.0.0",
+    "playwright>=1.58.0",
+    "pytest-playwright>=0.7.2",
+    "yahooquery>=2.4.1",
+    "yfinance>=1.2.0",
 ]

@@ -59,7 +59,7 @@ const Dashboard = () => {
                 const mapped = syms.map(s => ({
                     code: s.symbol,
                     name: s.name,
-                    market: s.market === 1 ? 'SH' : 'SZ'
+                    market: s.market === 1 ? 'SH' : (s.market === 100 ? 'INTL' : 'SZ')
                 }));
                 if (mapped.length === 0) {
                     setSupportedSymbols([
@@ -83,8 +83,8 @@ const Dashboard = () => {
     };
 
     const handleAddSymbol = async () => {
-        if (!newSymbol || newSymbol.length !== 6) {
-            alert("请输入6位股票代码");
+        if (!newSymbol || (newSymbol.length !== 6 && newSymbol.toUpperCase() !== 'XAU')) {
+            alert("请输入有效代码（如股票6位，或XAU）");
             return;
         }
         setAddingLoading(true);
@@ -363,7 +363,7 @@ const Dashboard = () => {
                             className="flex items-center gap-4 pl-3 pr-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all duration-200 group w-auto md:w-64 justify-between"
                         >
                             <div className="flex items-center gap-3">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentMarket === 'SH' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]'}`}>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentMarket === 'SH' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : (currentMarket === 'INTL' ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]')}`}>
                                     {currentMarket}
                                 </span>
                                 <div className="flex flex-col items-start gap-0.5 text-left">

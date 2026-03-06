@@ -55,8 +55,9 @@ func main() {
 	// Auto Migrate
 	DB.AutoMigrate(&Symbol{})
 
-	// Start Background Refresh Task
+	// Start Background Refresh Tasks
 	go startBackgroundRefresh()
+	go startGoldRefresh()
 
 	r := gin.Default()
 
@@ -287,5 +288,22 @@ func startBackgroundRefresh() {
 
 		log.Println("Background Refresh: Finished current scan. Sleeping for 1 hour.")
 		time.Sleep(1 * time.Hour)
+	}
+}
+
+func startGoldRefresh() {
+	log.Println("Starting background gold data refresh task (every 2 minutes)...")
+	for {
+		log.Println("Background Refresh: Updating Gold data (XAU)...")
+		cmd := exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+		cmd.Dir = ".."
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Background Gold Refresh Error: %v\nOutput: %s", err, string(out))
+		} else {
+			log.Printf("Background Gold Refresh Success")
+		}
+		// 黄金市场24h交易频繁，这里设置2分钟同步一次
+		time.Sleep(2 * time.Minute)
 	}
 }
