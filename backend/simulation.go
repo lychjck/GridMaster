@@ -18,8 +18,10 @@ type SimConfig struct {
 	GridStepType   string  `json:"gridStepType"`   // "percent" (default) or "absolute"
 	CommissionRate float64 `json:"commissionRate"` // e.g. 0.0002
 	MinCommission  float64 `json:"minCommission"`  // e.g. 0.2
+	SlippageRate   float64 `json:"slippageRate"`   // New: simulated slippage or bid/ask spread (e.g. 0.001 for 0.1%)
 	AmountPerGrid  float64 `json:"amountPerGrid"`  // Default 100 shares
 	InitialShares  int64   `json:"initialShares"`  // Base Position
+	InitialCapital float64 `json:"initialCapital"` // Fixed base capital (0 = disabled/infinite)
 	UsePenetration bool    `json:"usePenetration"` // New: Strict penetration mode
 }
 
@@ -45,15 +47,18 @@ type Trade struct {
 }
 
 type SimResult struct {
-	TotalProfit      float64     `json:"totalProfit"`
-	TotalYieldAmount float64     `json:"totalYieldAmount"` // Total Strategy PnL
-	TotalFloating    float64     `json:"totalFloating"`    // Floating PnL
-	TotalTx          int         `json:"totalTx"`
-	TotalComm        float64     `json:"totalComm"`
-	NetPosition      float64     `json:"netPosition"`
-	DailyStats       []DailyStat `json:"dailyStats"`
-	Trades           []Trade     `json:"trades"`
-	ChartData        []Kline     `json:"chartData"`
+	TotalProfit      float64       `json:"totalProfit"`
+	TotalYieldAmount float64       `json:"totalYieldAmount"` // Total Strategy PnL
+	TotalFloating    float64       `json:"totalFloating"`    // Floating PnL
+	TotalTx          int           `json:"totalTx"`
+	TotalComm        float64       `json:"totalComm"`
+	NetPosition      float64       `json:"netPosition"`
+	DailyStats       []DailyStat   `json:"dailyStats"`
+	Trades           []Trade       `json:"trades"`
+	ChartData        []Kline       `json:"chartData"`
+	GridDensityData  []GridDensity `json:"gridDensityData"`
+	MissedBuys       int           `json:"missedBuys"`  // Number of grid intervals skipped due to lack of cash
+	MissedSells      int           `json:"missedSells"` // Number of grid intervals skipped due to lack of inventory
 
 	// Advanced Metrics
 	MaxDrawdown     float64 `json:"maxDrawdown"` // Percentage (e.g., -0.15 for -15%)
@@ -62,6 +67,11 @@ type SimResult struct {
 	WinRate         float64 `json:"winRate"`         // Count of Profitable Grid Pairs / Total Completed Pairs
 	BenchmarkReturn float64 `json:"benchmarkReturn"` // Stock Price Change %
 	PeriodReturn    float64 `json:"periodReturn"`    // Un-annualized Strategy Return %
+}
+
+type GridDensity struct {
+	PriceLevel float64 `json:"priceLevel"`
+	TradeCount int     `json:"tradeCount"`
 }
 
 func RegisterSimulationRoutes(r *gin.Engine) {
@@ -157,8 +167,10 @@ type BatchSimConfig struct {
 	GridStepType   string  `json:"gridStepType"`
 	CommissionRate float64 `json:"commissionRate"`
 	MinCommission  float64 `json:"minCommission"`
+	SlippageRate   float64 `json:"slippageRate"`
 	AmountPerGrid  float64 `json:"amountPerGrid"`
 	InitialShares  int64   `json:"initialShares"`
+	InitialCapital float64 `json:"initialCapital"`
 	UsePenetration bool    `json:"usePenetration"`
 }
 
@@ -169,6 +181,8 @@ type BatchSimResult struct {
 	FloatProfit float64 `json:"floatProfit"`
 	TotalProfit float64 `json:"totalProfit"`
 	NetPosition float64 `json:"netPosition"`
+	MissedBuys  int     `json:"missedBuys"`
+	MissedSells int     `json:"missedSells"`
 	TotalTx     int     `json:"totalTx"`
 	SharpeRatio float64 `json:"sharpeRatio"`
 	WinRate     float64 `json:"winRate"`
@@ -216,8 +230,10 @@ func runBatchSimulation(c *gin.Context) {
 			GridStepType:   config.GridStepType,
 			CommissionRate: config.CommissionRate,
 			MinCommission:  config.MinCommission,
+			SlippageRate:   config.SlippageRate,
 			AmountPerGrid:  config.AmountPerGrid,
 			InitialShares:  config.InitialShares,
+			InitialCapital: config.InitialCapital,
 			UsePenetration: config.UsePenetration,
 		}
 
@@ -230,6 +246,8 @@ func runBatchSimulation(c *gin.Context) {
 			FloatProfit: res.TotalFloating,
 			TotalProfit: res.TotalYieldAmount,
 			NetPosition: float64(res.NetPosition), // cast to float64 for generic JSON marshaling if needed, though int is fine. keeping it consistent.
+			MissedBuys:  res.MissedBuys,
+			MissedSells: res.MissedSells,
 			TotalTx:     res.TotalTx,
 			SharpeRatio: res.SharpeRatio,
 			WinRate:     res.WinRate,
@@ -258,13 +276,18 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 	}
 
 	lastExecIndex := initialIndex
-	currentCash := 0.0
+	currentCash := config.InitialCapital // 0 means infinity
 	currentPos := 0.0
 	dailyStatsMap := make(map[string]*DailyStat)
+	gridDensityMap := make(map[float64]int)
 	var result SimResult
 
 	initialPosValueAtStart := float64(config.InitialShares) * preClosePrice
 	minCash := -initialPosValueAtStart
+
+	if config.InitialCapital > 0 {
+		minCash = currentCash - initialPosValueAtStart // Use provided capital instead
+	}
 
 	for _, k := range klines {
 		date := k.Timestamp[:10]
@@ -302,8 +325,16 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 					}
 
 					if triggered {
-						cost := nextBuyPrice * config.AmountPerGrid
+						// Apply Slippage: buy higher
+						actualBuyPrice := nextBuyPrice * (1 + config.SlippageRate)
+						cost := actualBuyPrice * config.AmountPerGrid
 						comm := math.Max(cost*config.CommissionRate, config.MinCommission)
+
+						// Check if we hit capital limit
+						if config.InitialCapital > 0 && currentCash < (cost+comm) {
+							result.MissedBuys++
+							break
+						}
 
 						if cost > 0 {
 							stat.BuyCount++
@@ -319,10 +350,13 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 							result.Trades = append(result.Trades, Trade{
 								Time:   k.Timestamp,
 								Type:   "BUY",
-								Price:  RoundTo3(nextBuyPrice),
+								Price:  RoundTo3(actualBuyPrice),
 								Amount: config.AmountPerGrid,
 								Comm:   RoundTo3(comm),
 							})
+
+							priceKey := RoundTo3(nextBuyPrice)
+							gridDensityMap[priceKey]++
 						} else {
 							break
 						}
@@ -352,13 +386,27 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 					}
 
 					if triggered {
-						revenue := nextSellPrice * config.AmountPerGrid
+						// Check if we have inventory to sell
+						if float64(config.InitialShares)+currentPos < config.AmountPerGrid-0.0001 {
+							// No inventory, just move the grid up
+							result.MissedSells++
+							lastExecIndex = nextSellIndex
+							continue
+						}
+
+						// Apply Slippage: sell lower
+						actualSellPrice := nextSellPrice * (1 - config.SlippageRate)
+						revenue := actualSellPrice * config.AmountPerGrid
 						comm := math.Max(revenue*config.CommissionRate, config.MinCommission)
 
 						stat.SellCount++
 						stat.Commission += comm
 
-						gross := (nextSellPrice - buyPrice) * config.AmountPerGrid
+						// True cost basis needs to track average cost ideally, but we rely on simple match.
+						// Using target buy price for PnL calculation is slightly inaccurate if buying slippage isn't matched.
+						// To be fair, let's calculate gross using actualSellPrice - (buyPrice * (1+Slippage))
+						actualBuyPriceForThisSell := buyPrice * (1 + config.SlippageRate)
+						gross := (actualSellPrice - actualBuyPriceForThisSell) * config.AmountPerGrid
 						stat.GrossProfit += gross
 
 						lastExecIndex = nextSellIndex
@@ -369,10 +417,13 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 						result.Trades = append(result.Trades, Trade{
 							Time:   k.Timestamp,
 							Type:   "SELL",
-							Price:  RoundTo3(nextSellPrice),
+							Price:  RoundTo3(actualSellPrice),
 							Amount: config.AmountPerGrid,
 							Comm:   RoundTo3(comm),
 						})
+
+						priceKey := RoundTo3(nextSellPrice)
+						gridDensityMap[priceKey]++
 					} else {
 						break
 					}
@@ -388,9 +439,12 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 	var totalBuyCount, totalSellCount int
 	var dailyNetValues []float64
 
-	initialCapital := math.Abs(minCash)
+	initialCapital := config.InitialCapital
 	if initialCapital == 0 {
-		initialCapital = firstPrice * config.AmountPerGrid
+		initialCapital = math.Abs(minCash)
+		if initialCapital == 0 {
+			initialCapital = firstPrice * config.AmountPerGrid
+		}
 	}
 
 	for _, s := range dailyStatsMap {
@@ -445,6 +499,18 @@ func calcSimulation(klines []Kline, config SimConfig, preClosePrice float64) Sim
 	result.TotalComm = RoundTo3(result.TotalComm)
 	result.DailyStats = sortedStats
 	result.ChartData = klines
+
+	var gridDensityData []GridDensity
+	for price, count := range gridDensityMap {
+		gridDensityData = append(gridDensityData, GridDensity{
+			PriceLevel: price,
+			TradeCount: count,
+		})
+	}
+	sort.Slice(gridDensityData, func(i, j int) bool {
+		return gridDensityData[i].PriceLevel < gridDensityData[j].PriceLevel
+	})
+	result.GridDensityData = gridDensityData
 
 	result.MaxDrawdown = RoundTo3(math.Abs(maxDrawdown) * 100)
 

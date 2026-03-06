@@ -3,6 +3,8 @@ import { runSimulation, runBatchSimulation, getDailyKlines } from '../lib/api';
 import { RefreshCw, Calculator, TrendingUp, TrendingDown, DollarSign, Play, List, Calendar, ChevronDown, MoveHorizontal } from 'lucide-react';
 import TradeChart from './TradeChart';
 import CyberDatePicker from './CyberDatePicker';
+import GridDensityChart from './GridDensityChart';
+import ParameterSweepChart from './ParameterSweepChart';
 
 const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const [config, setConfig] = useState(() => {
@@ -17,7 +19,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
             amountPerGrid: 2000,
             commissionRate: 0.0001,
             minCommission: 0.2,
+            slippageRate: 0.001, // 0.1% slippage buffer default
             initialShares: 0,
+            initialCapital: 0, // 0 implies unlimited auto-calculated padding
             usePenetration: false
         };
         const saved = localStorage.getItem('sim_config');
@@ -36,7 +40,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
 
     const [loading, setLoading] = useState(false);
     const [simMode, setSimMode] = useState('single'); // 'single' | 'batch'
-    const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart'
+    const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'trades' | 'chart' | 'density'
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const hasAutoSyncedDate = React.useRef(false);
 
@@ -107,7 +111,10 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                     gridStep: parseFloat(config.gridStep),
                     amountPerGrid: parseFloat(config.amountPerGrid),
                     commissionRate: parseFloat(config.commissionRate),
-                    minCommission: parseFloat(config.minCommission)
+                    minCommission: parseFloat(config.minCommission),
+                    slippageRate: parseFloat(config.slippageRate || 0),
+                    initialShares: parseInt(config.initialShares) || 0,
+                    initialCapital: parseFloat(config.initialCapital) || 0
                 });
                 console.log("Simulation Result:", res);
                 setResult(res);
@@ -125,7 +132,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                     amountPerGrid: parseFloat(config.amountPerGrid),
                     commissionRate: parseFloat(config.commissionRate),
                     minCommission: parseFloat(config.minCommission),
-                    initialShares: parseInt(config.initialShares) || 0
+                    slippageRate: parseFloat(config.slippageRate || 0),
+                    initialShares: parseInt(config.initialShares) || 0,
+                    initialCapital: parseFloat(config.initialCapital) || 0
                 };
                 console.log("Sending Batch Request:", payload);
                 const res = await runBatchSimulation(payload);
@@ -293,6 +302,23 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                         </div>
                     </div>
 
+                    <div className="flex flex-col gap-2 md:col-span-2">
+                        <label className="text-slate-400 text-xs font-medium uppercase tracking-wider flex items-center justify-between">
+                            <span>投入本金 (Initial Cash)</span>
+                            <span className="text-indigo-400/70 text-[10px] lowercase normal-case">填 0 为不限,自核所需总金</span>
+                        </label>
+                        <div className="relative flex items-center">
+                            <span className="absolute left-4 top-3.5 text-slate-500 font-mono">¥</span>
+                            <input
+                                type="number" step="1000"
+                                className="w-full bg-black/20 border border-indigo-500/30 rounded-xl pl-8 pr-4 py-3 text-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
+                                value={config.initialCapital === 0 ? '' : config.initialCapital}
+                                placeholder="不限制本金"
+                                onChange={e => setConfig({ ...config, initialCapital: parseFloat(e.target.value) || 0 })}
+                            />
+                        </div>
+                    </div>
+
                     <div className="flex flex-col gap-2">
                         <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">佣金费率 (Rate)</label>
                         <div className="relative">
@@ -316,6 +342,19 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                 onChange={e => setConfig({ ...config, minCommission: e.target.value })}
                             />
                             <span className="absolute right-4 top-3.5 text-slate-500 text-xs mt-0.5">元</span>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                        <label className="text-slate-400 text-xs font-medium uppercase tracking-wider">滑点损耗 (Slippage)</label>
+                        <div className="relative">
+                            <input
+                                type="number" step="0.0005"
+                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500/50 font-mono"
+                                value={config.slippageRate}
+                                onChange={e => setConfig({ ...config, slippageRate: e.target.value })}
+                            />
+                            <span className="absolute right-4 top-3.5 text-slate-500 text-xs mt-0.5">{(config.slippageRate * 100).toFixed(2)}%</span>
                         </div>
                     </div>
 
@@ -346,11 +385,22 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
             {/* Batch Results Area */}
             {batchResult && (
                 <div className="flex-1 min-h-0 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <ParameterSweepChart
+                        data={batchResult}
+                        loading={loading}
+                        onRunSweep={handleSimulate}
+                        sweepParams={{
+                            minStep: config.minStep,
+                            maxStep: config.maxStep,
+                            stepInterval: config.stepInterval
+                        }}
+                        setSweepParams={(p) => setConfig({ ...config, ...p })}
+                    />
                     <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
                         <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2 text-indigo-400 font-semibold">
                                 <List className="w-5 h-5" />
-                                <span className="text-lg">网格步长优化结果 (按步长增序)</span>
+                                <span className="text-lg">参数组合明细列表</span>
                             </div>
                         </div>
 
@@ -367,6 +417,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                         <th className="px-6 py-4 text-right">夏普比率</th>
                                         <th className="px-6 py-4 text-right">成交次数</th>
                                         <th className="px-6 py-4 text-right">网格胜率</th>
+                                        <th className="px-6 py-4 text-right">漏单 (缺钱)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5 font-mono">
@@ -397,6 +448,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                             <td className="px-6 py-4 text-right text-violet-400">{res.sharpeRatio?.toFixed(2)}</td>
                                             <td className="px-6 py-4 text-right text-slate-400">{res.totalTx}</td>
                                             <td className="px-6 py-4 text-right text-slate-400">{res.winRate?.toFixed(1)}%</td>
+                                            <td className={`px-6 py-4 text-right font-bold ${res.missedBuys > 0 ? 'text-amber-500' : 'text-slate-600'}`}>
+                                                {res.missedBuys === 0 ? '-' : `${res.missedBuys} 次`}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -460,6 +514,16 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                         <StatCard icon={<DollarSign />} label="策略总利润" value={(result.totalYieldAmount || 0).toFixed(2)} unit="元" color={(result.totalYieldAmount || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="包含网格已确定的利润和当前持仓的浮动盈亏总和。这是您账户在这个周期内的真实绝对收益。" />
                         <StatCard icon={<MoveHorizontal />} label="当前持仓" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
                         <StatCard icon={<RefreshCw />} label="成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
+                        {(result.missedBuys > 0 || config.initialCapital > 0) && (
+                            <StatCard
+                                icon={<TrendingDown className="rotate-90" />}
+                                label="漏单错失"
+                                value={result.missedBuys || 0}
+                                unit="次"
+                                color={result.missedBuys > 0 ? "text-amber-500 animate-pulse" : "text-emerald-500"}
+                                tooltip="当指定了初始本金时，向下买跌过程中可能遭遇现金耗尽。这里记录因【子弹打光】而导致被挂起错失底部的网格买单次数。"
+                            />
+                        )}
                     </div>
 
                     <div className="bg-slate-800/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex-1 shadow-xl flex flex-col min-h-[500px]">
@@ -482,6 +546,12 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                     className={`flex items-center gap-2 py-3 px-1 border-b-2 transition-all text-sm font-medium ${viewMode === 'chart' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
                                 >
                                     <TrendingUp className="w-4 h-4" /> 交易图表
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('density')}
+                                    className={`flex items-center gap-2 py-3 px-1 border-b-2 transition-all text-sm font-medium ${viewMode === 'density' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <TrendingUp className="w-4 h-4" /> 拥挤度分析
                                 </button>
                             </div>
                         </div>
@@ -564,6 +634,12 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             {viewMode === 'chart' && (
                                 <div className="p-4 h-full min-h-[460px]">
                                     <TradeChart data={result.chartData} trades={result.trades} />
+                                </div>
+                            )}
+
+                            {viewMode === 'density' && (
+                                <div className="p-4 h-full min-h-[460px]">
+                                    <GridDensityChart data={result.gridDensityData} />
                                 </div>
                             )}
                         </div>
