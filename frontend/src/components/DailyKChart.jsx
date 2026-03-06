@@ -21,8 +21,45 @@ const DailyKChart = ({ symbol, startDate }) => {
     const [error, setError] = useState(null);
     const [activeRange, setActiveRange] = useState(120); // Default to '半年' (120 trading days) instead of '全部'
 
+    // Custom return calculator
+    const [customDays, setCustomDays] = useState('');
+    const [customReturn, setCustomReturn] = useState(null);
+
     // When data loads, potentially apply initial zoom if not '全部', 
     // but we default to '全部' (0) here, so option natively uses it.
+
+    // Effect for calculating custom N-days return
+    useEffect(() => {
+        if (!data || data.length === 0 || !customDays) {
+            setCustomReturn(null);
+            return;
+        }
+
+        const days = parseInt(customDays, 10);
+        if (isNaN(days) || days <= 0) {
+            setCustomReturn(null);
+            return;
+        }
+
+        const latestIdx = data.length - 1;
+        const pastIdx = latestIdx - days;
+
+        if (pastIdx < 0) {
+            setCustomReturn(null);
+            return;
+        }
+
+        const latestPrice = data[latestIdx].close;
+        const pastPrice = data[pastIdx].close;
+        const ret = ((latestPrice - pastPrice) / pastPrice) * 100;
+
+        setCustomReturn({
+            days,
+            pastDate: data[pastIdx].timestamp.slice(0, 10),
+            latestDate: data[latestIdx].timestamp.slice(0, 10),
+            value: ret
+        });
+    }, [customDays, data]);
 
     useEffect(() => {
         if (!symbol) return;
@@ -296,6 +333,30 @@ const DailyKChart = ({ symbol, startDate }) => {
                             {range.label}
                         </button>
                     ))}
+                </div>
+
+                {/* Custom Days Return Calculator */}
+                <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
+                    <span className="text-xs font-medium text-slate-400">近</span>
+                    <input
+                        type="number"
+                        min="1"
+                        className="w-16 bg-black/20 border border-white/10 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+                        placeholder="N"
+                        value={customDays}
+                        onChange={e => setCustomDays(e.target.value)}
+                    />
+                    <span className="text-xs font-medium text-slate-400 mr-2">交易日涨幅:</span>
+
+                    {customReturn ? (
+                        <div className="flex flex-col">
+                            <span className={`text-sm font-bold ${customReturn.value >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                {customReturn.value > 0 ? '+' : ''}{customReturn.value.toFixed(2)}%
+                            </span>
+                        </div>
+                    ) : (
+                        <span className="text-sm font-bold text-slate-600">--%</span>
+                    )}
                 </div>
             </div>
 
