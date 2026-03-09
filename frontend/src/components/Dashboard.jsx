@@ -43,6 +43,8 @@ const Dashboard = () => {
     // UI Tab State
     const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'simulation'
     const [showGridLines, setShowGridLines] = useState(localStorage.getItem('showGridLines') !== 'false');
+    const [showVolumeProfile, setShowVolumeProfile] = useState(localStorage.getItem('showVolumeProfile') !== 'false');
+    const [vpvrColor, setVpvrColor] = useState(localStorage.getItem('vpvrColor') || 'indigo'); // 'indigo' | 'emerald' | 'amber' | 'rose' | 'slate'
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(localStorage.getItem('autoRefreshEnabled') !== 'false');
 
     // Theme Panel
@@ -237,6 +239,8 @@ const Dashboard = () => {
     useEffect(() => { localStorage.setItem('gridStepUnit', gridStepUnit); }, [gridStepUnit]);
     useEffect(() => { localStorage.setItem('initialPrice', initialPrice); }, [initialPrice]);
     useEffect(() => { localStorage.setItem('showGridLines', showGridLines); }, [showGridLines]);
+    useEffect(() => { localStorage.setItem('showVolumeProfile', showVolumeProfile); }, [showVolumeProfile]);
+    useEffect(() => { localStorage.setItem('vpvrColor', vpvrColor); }, [vpvrColor]);
     useEffect(() => { localStorage.setItem('autoRefreshEnabled', autoRefreshEnabled); }, [autoRefreshEnabled]);
 
     // Clear simulation markers IF AND ONLY IF asset or date changes, NOT for every fetch
@@ -722,7 +726,7 @@ const Dashboard = () => {
                                     <div className="w-1.5 h-4 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
                                     <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Grid Settings</h2>
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                     {/* Grid Lines Toggle */}
                                     <label className="flex items-center gap-1.5 cursor-pointer group">
                                         <div className="relative">
@@ -737,6 +741,46 @@ const Dashboard = () => {
                                         </div>
                                         <span className="text-[10px] text-slate-400 font-medium group-hover:text-slate-300 transition-colors uppercase tracking-wider">网格线</span>
                                     </label>
+
+                                    {/* VPVR Toggle & Color Picker */}
+                                    <div className="flex items-center gap-2 group">
+                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only"
+                                                    checked={showVolumeProfile}
+                                                    onChange={() => setShowVolumeProfile(!showVolumeProfile)}
+                                                />
+                                                <div className={`block w-7 h-4 rounded-full transition-colors ${showVolumeProfile ? 'bg-emerald-500' : 'bg-slate-700'}`}></div>
+                                                <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${showVolumeProfile ? 'translate-x-3' : 'translate-x-0'}`}></div>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 font-medium group-hover:text-slate-300 transition-colors uppercase tracking-wider tooltip" title="筹码分布墙 (Volume Profile)">筹码墙</span>
+                                        </label>
+
+                                        {/* Simple Color Picker for VPVR */}
+                                        {showVolumeProfile && (
+                                            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-white/10 transition-all duration-300">
+                                                {['indigo', 'emerald', 'amber', 'rose', 'slate'].map(color => {
+                                                    const colorClasses = {
+                                                        indigo: 'bg-indigo-500',
+                                                        emerald: 'bg-emerald-500',
+                                                        amber: 'bg-amber-500',
+                                                        rose: 'bg-rose-500',
+                                                        slate: 'bg-slate-500'
+                                                    };
+                                                    return (
+                                                        <button
+                                                            key={color}
+                                                            onClick={(e) => { e.preventDefault(); setVpvrColor(color); }}
+                                                            className={`w-3 h-3 rounded-full transition-all ${vpvrColor === color ? 'ring-2 ring-white scale-110' : 'opacity-50 hover:opacity-100'} ${colorClasses[color]}`}
+                                                            title={`选择颜色: ${color}`}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Unit Toggle */}
                                     <div className="flex bg-black/30 p-0.5 rounded-lg border border-white/5">
@@ -870,6 +914,8 @@ const Dashboard = () => {
                                         preClose={preClose}
                                         isLive={selectedDate === new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')}
                                         showGridLines={showGridLines}
+                                        showVolumeProfile={showVolumeProfile}
+                                        vpvrColor={vpvrColor}
                                     />
                                 </div>
                             </div>

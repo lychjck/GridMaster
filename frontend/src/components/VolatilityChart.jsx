@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive, showGridLines = true }) => {
+const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive, showGridLines = true, showVolumeProfile = true, vpvrColor = 'indigo' }) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
     const isDraggingRef = useRef(false);
@@ -169,6 +169,66 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
     const getOption = () => {
         if (!data || data.length === 0) return {};
+
+        // Calculate Volume Profile (VPVR)
+        const calculateVolumeProfile = (klines, bins = 60) => {
+            if (!klines || klines.length === 0) return { profileData: [], pocPrice: null, maxVolume: 0 };
+
+            let minP = Infinity;
+            let maxP = -Infinity;
+            klines.forEach(k => {
+                minP = Math.min(minP, parseFloat(k.low));
+                maxP = Math.max(maxP, parseFloat(k.high));
+            });
+
+            if (maxP === minP) {
+                return { profileData: [[klines.reduce((s, k) => s + parseFloat(k.volume), 0), minP, 0.001]], pocPrice: minP, maxVolume: 0 };
+            }
+
+            const binSize = (maxP - minP) / bins;
+            const profile = new Array(bins).fill(0);
+
+            klines.forEach(k => {
+                const l = parseFloat(k.low);
+                const h = parseFloat(k.high);
+                const v = parseFloat(k.volume);
+
+                const lowBin = Math.max(0, Math.min(bins - 1, Math.floor((l - minP) / binSize)));
+                const highBin = Math.max(0, Math.min(bins - 1, Math.floor((h - minP) / binSize)));
+                const spanned = highBin - lowBin + 1;
+                const volPerBin = v / spanned;
+
+                for (let i = lowBin; i <= highBin; i++) {
+                    profile[i] += volPerBin;
+                }
+            });
+
+            let maxV = 0;
+            let pocP = null;
+            const profileData = [];
+
+            profile.forEach((vol, i) => {
+                const binCenter = minP + (i + 0.5) * binSize;
+                profileData.push([vol, binCenter, binSize]); // x=vol, y=priceCenter, meta=binSize
+                if (vol > maxV) {
+                    maxV = vol;
+                    pocP = binCenter;
+                }
+            });
+            return { profileData, pocPrice: pocP, maxVolume: maxV };
+        };
+
+        const profileResult = showVolumeProfile ? calculateVolumeProfile(data, 70) : { profileData: [], pocPrice: null, maxVolume: 0 };
+
+        // Define VPVR Theme centrally so it can be used for both rendering items and marklines
+        const colorMap = {
+            indigo: { fill: 'rgba(99, 102, 241, 0.12)', stroke: 'rgba(99, 102, 241, 0.25)' },
+            emerald: { fill: 'rgba(16, 185, 129, 0.12)', stroke: 'rgba(16, 185, 129, 0.25)' },
+            amber: { fill: 'rgba(245, 158, 11, 0.12)', stroke: 'rgba(245, 158, 11, 0.25)' },
+            rose: { fill: 'rgba(244, 63, 94, 0.12)', stroke: 'rgba(244, 63, 94, 0.25)' },
+            slate: { fill: 'rgba(100, 116, 139, 0.12)', stroke: 'rgba(100, 116, 139, 0.25)' }
+        };
+        const vpvrTheme = colorMap[vpvrColor] || colorMap['indigo'];
 
         // Robust extraction of Open/Close prices with cross-source fallback
         const getValidOpen = () => {
@@ -437,6 +497,14 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     axisLabel: { show: false },
                     min: 'dataMin',
                     max: 'dataMax'
+                },
+                {
+                    // Axis 2: Used strictly as an invisible horizontal scale for the volume profile.
+                    type: 'value',
+                    gridIndex: 0,
+                    show: false,
+                    min: 0,
+                    max: profileResult.maxVolume > 0 ? profileResult.maxVolume * 3.5 : 100 // Give it large headroom to keep mountains on the left
                 }
             ],
             yAxis: [
@@ -502,6 +570,54 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                 }
             ],
             series: [
+                {
+                    name: '筹码分布',
+                    type: 'custom',
+                    xAxisIndex: 2, // Map to our custom Volume Profile X-axis
+                    yAxisIndex: 0, // Map to main price Y-axis
+                    z: 1,          // Put it all the way in the background
+                    silent: true,
+                    data: profileResult.profileData,
+                    renderItem: function (params, api) {
+                        const volume = api.value(0);
+                        const priceCenter = api.value(1);
+                        const binSize = api.value(2);
+
+                        // Ignore tiny zero-volume bins to keep path clean
+                        if (volume <= 0) return;
+
+                        const ptTopRight = api.coord([volume, priceCenter + binSize / 2]);
+                        const ptBottomLeft = api.coord([0, priceCenter - binSize / 2]);
+
+                        const y = ptTopRight[1];
+                        const h = ptBottomLeft[1] - ptTopRight[1];
+                        const w = ptTopRight[0] - ptBottomLeft[0];
+
+                        return {
+                            type: 'rect',
+                            shape: {
+                                x: ptBottomLeft[0],
+                                y: y,
+                                width: w,
+                                height: h
+                            },
+                            style: api.style({
+                                fill: vpvrTheme.fill,
+                                stroke: vpvrTheme.stroke,
+                                lineWidth: 1
+                            })
+                        };
+                    },
+                    markLine: profileResult.pocPrice ? {
+                        symbol: ['none', 'none'],
+                        data: [{
+                            yAxis: profileResult.pocPrice,
+                            label: { position: 'insideStartTop', formatter: 'POC', color: vpvrTheme.stroke.replace('0.25', '0.9'), fontSize: 10, distance: 0 },
+                            lineStyle: { color: vpvrTheme.stroke.replace('0.25', '0.7'), type: 'dotted', width: 2 }
+                        }],
+                        silent: true
+                    } : null
+                },
                 {
                     name: '价格',
                     type: 'line',
