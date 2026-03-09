@@ -46,6 +46,10 @@ const Dashboard = () => {
     const [showVolumeProfile, setShowVolumeProfile] = useState(localStorage.getItem('showVolumeProfile') !== 'false');
     const [vpvrColor, setVpvrColor] = useState(localStorage.getItem('vpvrColor') || 'indigo'); // 'indigo' | 'emerald' | 'amber' | 'rose' | 'slate'
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(localStorage.getItem('autoRefreshEnabled') !== 'false');
+    const [goldPriceUnit, setGoldPriceUnit] = useState(localStorage.getItem('goldPriceUnit') || 'USD/oz'); // 'USD/oz' | 'RMB/g'
+    const [usdCnyRate, setUsdCnyRate] = useState(parseFloat(localStorage.getItem('usdCnyRate')) || 7.2);
+    const [goldAdjustment, setGoldAdjustment] = useState(parseFloat(localStorage.getItem('goldAdjustment')) || 0);
+
 
     // Theme Panel
     const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -125,6 +129,14 @@ const Dashboard = () => {
     useEffect(() => {
         initData();
     }, [selectedSymbol]);
+
+    useEffect(() => {
+        localStorage.setItem('usdCnyRate', usdCnyRate);
+    }, [usdCnyRate]);
+
+    useEffect(() => {
+        localStorage.setItem('goldAdjustment', goldAdjustment);
+    }, [goldAdjustment]);
 
     // 2. Fetch Detailed Klines & Daily Info when Date Selected
     const fetchData = async () => {
@@ -266,10 +278,16 @@ const Dashboard = () => {
         if (!klines || klines.length === 0) return;
         const highs = klines.map(k => k.high);
         const lows = klines.map(k => k.low);
-        const max = Math.max(...highs);
-        const min = Math.min(...lows);
+        let max = Math.max(...highs);
+        let min = Math.min(...lows);
         const range = ((max - min) / min) * 100;
-        const spread = max - min;
+        let spread = max - min;
+
+        // Unit conversion for Gold stats display
+        if (selectedSymbol === 'XAU' && goldPriceUnit === 'RMB/g') {
+            const factor = (parseFloat(usdCnyRate) || 7.2) / 31.1035;
+            spread = spread * factor + (parseFloat(goldAdjustment) || 0);
+        }
 
         setStats({
             range: range.toFixed(2),
@@ -797,8 +815,65 @@ const Dashboard = () => {
                                             点
                                         </button>
                                     </div>
+
+                                    {/* Gold Unit Toggle (XAU Only) */}
+                                    {selectedSymbol === 'XAU' && (
+                                        <div className="flex bg-black/30 p-0.5 rounded-lg border border-amber-500/20 ml-1">
+                                            <button
+                                                onClick={() => {
+                                                    const next = 'USD/oz';
+                                                    setGoldPriceUnit(next);
+                                                    localStorage.setItem('goldPriceUnit', next);
+                                                }}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${goldPriceUnit === 'USD/oz' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                $/oz
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const next = 'RMB/g';
+                                                    setGoldPriceUnit(next);
+                                                    localStorage.setItem('goldPriceUnit', next);
+                                                }}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${goldPriceUnit === 'RMB/g' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                ￥/g
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* Gold Calibration (XAU Only) */}
+                            {selectedSymbol === 'XAU' && goldPriceUnit === 'RMB/g' && (
+                                <div className="grid grid-cols-2 gap-3 mb-4 animate-in slide-in-from-top-1 duration-200">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-amber-500/80 uppercase font-bold tracking-wider flex items-center justify-between">
+                                            <span>黄金汇率</span>
+                                            <span className="text-[8px] opacity-40 font-mono">RATE</span>
+                                        </label>
+                                        <input
+                                            type="number" step="0.01"
+                                            className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-xs text-amber-200 focus:outline-none focus:border-amber-500/50 font-mono"
+                                            value={usdCnyRate}
+                                            onChange={e => setUsdCnyRate(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-amber-500/80 uppercase font-bold tracking-wider flex items-center justify-between">
+                                            <span>价格修正 (元)</span>
+                                            <span className="text-[8px] opacity-40 font-mono">CALI</span>
+                                        </label>
+                                        <input
+                                            type="number" step="0.1"
+                                            className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-xs text-amber-200 focus:outline-none focus:border-amber-500/50 font-mono"
+                                            value={goldAdjustment}
+                                            placeholder="如 -1.5"
+                                            onChange={e => setGoldAdjustment(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
@@ -916,13 +991,24 @@ const Dashboard = () => {
                                         showGridLines={showGridLines}
                                         showVolumeProfile={showVolumeProfile}
                                         vpvrColor={vpvrColor}
+                                        goldPriceUnit={goldPriceUnit}
+                                        usdCnyRate={usdCnyRate}
+                                        goldAdjustment={goldAdjustment}
+                                        selectedSymbol={selectedSymbol}
                                     />
                                 </div>
                             </div>
                         )
                     ) : activeTab === 'simulation' ? (
                         <div className="glass-panel min-h-full rounded-2xl p-8 border border-white/5 animate-slide-up">
-                            <SimulationPanel availableDates={availableDates} initialBasePrice={initialPrice} symbol={selectedSymbol} />
+                            <SimulationPanel
+                                availableDates={availableDates}
+                                initialBasePrice={initialPrice}
+                                symbol={selectedSymbol}
+                                goldPriceUnit={goldPriceUnit}
+                                usdCnyRate={usdCnyRate}
+                                goldAdjustment={goldAdjustment}
+                            />
                         </div>
                     ) : (
                         <div className="w-full h-full glass-panel rounded-2xl border border-white/5 shadow-2xl overflow-hidden relative group animate-slide-up" style={{ animationDelay: '0.05s' }}>

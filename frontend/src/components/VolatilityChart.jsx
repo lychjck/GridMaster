@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
-const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange, tradePoints = [], preClose, isLive, showGridLines = true, showVolumeProfile = true, vpvrColor = 'indigo' }) => {
+const VolatilityChart = ({
+    data, dailyInfo, gridStep, gridStepUnit, initialPrice, onBaselineChange,
+    tradePoints = [], preClose, isLive, showGridLines = true,
+    showVolumeProfile = true, vpvrColor = 'indigo',
+    goldPriceUnit = 'USD/oz', usdCnyRate = 7.2, goldAdjustment = 0, selectedSymbol = ''
+}) => {
     const chartRef = useRef(null);
     const [selectedIndices, setSelectedIndices] = useState([]);
     const isDraggingRef = useRef(false);
@@ -218,7 +223,33 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
             return { profileData, pocPrice: pocP, maxVolume: maxV };
         };
 
-        const profileResult = showVolumeProfile ? calculateVolumeProfile(data, 70) : { profileData: [], pocPrice: null, maxVolume: 0 };
+        // 黄金单位换算
+        const isGoldRMB = selectedSymbol === 'XAU' && goldPriceUnit === 'RMB/g';
+        const goldFactor = (parseFloat(usdCnyRate) || 7.2) / 31.1035;
+        const cvt = (p) => (isGoldRMB && p != null) ? (parseFloat(p) * goldFactor + (parseFloat(goldAdjustment) || 0)) : (p != null ? parseFloat(p) : p);
+        const formatPrice = (p) => p == null ? '' : (isGoldRMB ? parseFloat(p).toFixed(2) : parseFloat(p).toFixed(3));
+
+        // Create a mapped shallow copy of data
+        const cvtData = isGoldRMB ? data.map(d => ({
+            ...d,
+            open: cvt(d.open),
+            close: cvt(d.close),
+            high: cvt(d.high),
+            low: cvt(d.low),
+        })) : data;
+
+        const cvtDailyInfo = isGoldRMB && dailyInfo ? {
+            ...dailyInfo,
+            open: cvt(dailyInfo.open),
+            close: cvt(dailyInfo.close),
+            high: cvt(dailyInfo.high),
+            low: cvt(dailyInfo.low),
+        } : dailyInfo;
+
+        const cvtPreClose = isGoldRMB ? cvt(preClose) : preClose;
+        const cvtTradePoints = isGoldRMB ? tradePoints.map(t => ({ ...t, price: cvt(t.price) })) : tradePoints;
+
+        const profileResult = showVolumeProfile ? calculateVolumeProfile(cvtData, 70) : { profileData: [], pocPrice: null, maxVolume: 0 };
 
         // Define VPVR Theme centrally so it can be used for both rendering items and marklines
         const colorMap = {
@@ -232,13 +263,13 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
         // Robust extraction of Open/Close prices with cross-source fallback
         const getValidOpen = () => {
-            const fromData = data.length > 0 ? parseFloat(data[0].open) : 0;
-            const fromDaily = dailyInfo ? parseFloat(dailyInfo.open) : 0;
+            const fromData = cvtData.length > 0 ? parseFloat(cvtData[0].open) : 0;
+            const fromDaily = cvtDailyInfo ? parseFloat(cvtDailyInfo.open) : 0;
             return fromData > 0 ? fromData : (fromDaily > 0 ? fromDaily : fromData);
         };
         const getValidClose = () => {
-            const fromData = data.length > 0 ? parseFloat(data[data.length - 1].close) : 0;
-            const fromDaily = dailyInfo ? parseFloat(dailyInfo.close) : 0;
+            const fromData = cvtData.length > 0 ? parseFloat(cvtData[cvtData.length - 1].close) : 0;
+            const fromDaily = cvtDailyInfo ? parseFloat(cvtDailyInfo.close) : 0;
             return fromData > 0 ? fromData : (fromDaily > 0 ? fromDaily : fromData);
         };
 
@@ -247,16 +278,16 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
         // Synthesize 09:30 data point if missing (common in minute data starting at 09:31)
         // This ensures the chart looks "connected" from the open.
-        let chartDates = data.map(item => item.timestamp);
-        let chartPrices = data.map(item => item.close);
-        let chartVolumes = data.map((item, index) => [index, item.volume, item.close >= item.open ? 1 : -1]);
+        let chartDates = cvtData.map(item => item.timestamp);
+        let chartPrices = cvtData.map(item => item.close);
+        let chartVolumes = cvtData.map((item, index) => [index, item.volume, item.close >= item.open ? 1 : -1]);
 
         let hasSynthesizedStart = false;
-        if (data.length > 0) {
-            const firstTime = data[0].timestamp.split(' ')[1]; // HH:MM
+        if (cvtData.length > 0) {
+            const firstTime = cvtData[0].timestamp.split(' ')[1]; // HH:MM
             // Synthesize 09:30 if the data starts later (e.g. 09:31 for 1m, 09:35 for 5m)
             if (firstTime > '09:30' && firstTime <= '10:00') { // Only for morning start
-                const datePart = data[0].timestamp.split(' ')[0];
+                const datePart = cvtData[0].timestamp.split(' ')[0];
                 const startTime = `${datePart} 09:30`;
 
                 chartDates.unshift(startTime);
@@ -264,7 +295,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
                 chartVolumes = [
                     [0, 0, 1],
-                    ...data.map((item, index) => [index + 1, item.volume, item.open > item.close ? 1 : -1])
+                    ...cvtData.map((item, index) => [index + 1, item.volume, item.open > item.close ? 1 : -1])
                 ];
                 hasSynthesizedStart = true;
             }
@@ -272,7 +303,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
         // Use synthesized arrays for rendering
         const allPrices = [...chartPrices, dayOpen, dayClose];
-        if (preClose) allPrices.push(preClose);
+        if (cvtPreClose) allPrices.push(cvtPreClose);
 
         const prices = chartPrices;
         const dates = chartDates;
@@ -349,11 +380,11 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
         // Adjust index if we added a synthesized start point
         const indexOffset = hasSynthesizedStart ? 1 : 0;
 
-        tradePoints.forEach(trade => {
+        cvtTradePoints.forEach(trade => {
             const chartIndex = trade.index + indexOffset;
             // Check boundaries
             if (chartIndex >= 0 && chartIndex < prices.length) {
-                const yValue = trade.price; // 使用后端返回的精确价格
+                const yValue = trade.price; // 使用后端返回的精确价格(已换算为Display Space)
                 const point = [chartIndex, yValue]; // [xIndex, yValue]
 
                 if (trade.type === 'B') {
@@ -394,9 +425,9 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         if (index === 0) {
                             return `<div style="font-size:12px; color:#ccc">09:30 开盘集合竞价 (拟合)</div>`;
                         }
-                        realItem = data[index - 1];
+                        realItem = cvtData[index - 1];
                     } else {
-                        realItem = data[index];
+                        realItem = cvtData[index];
                     }
 
                     if (!realItem) return '';
@@ -412,9 +443,9 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
                     // Calculate Change relative to PreClose (Real Change)
                     let preCloseHtml = '';
-                    if (preClose) {
-                        const realDiff = item.close - preClose;
-                        const realPct = (realDiff / preClose) * 100;
+                    if (cvtPreClose) {
+                        const realDiff = item.close - cvtPreClose;
+                        const realPct = (realDiff / cvtPreClose) * 100;
                         const realColor = realDiff >= 0 ? '#ef4444' : '#22c55e';
                         const realSign = realDiff >= 0 ? '+' : '';
                         preCloseHtml = `
@@ -424,7 +455,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
 
                     // Trade HTML Logic
                     const dataIndex = index - (hasSynthesizedStart ? 1 : 0);
-                    const tradesAtThisPoint = tradePoints.filter(t => t.index === dataIndex);
+                    const tradesAtThisPoint = cvtTradePoints.filter(t => t.index === dataIndex);
 
                     let tradeHtml = '';
                     if (tradesAtThisPoint.length > 0) {
@@ -434,7 +465,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                             const typeColor = t.type === 'B' ? '#10b981' : '#f43f5e';
                             tradeHtml += `
                                 <div style="display:flex; justify-content:space-between; color:${typeColor}; font-weight:bold;">
-                                    <span>${typeLabel} (触发价: ${t.price.toFixed(3)})</span>
+                                    <span>${typeLabel} (触发价: ${formatPrice(t.price)})</span>
                                     <span>成交</span>
                                 </div>
                             `;
@@ -448,10 +479,10 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                                 ${item.timestamp.split(' ')[1]} 分时数据
                             </div>
                             <div style="display:grid; grid-template-columns: 40px 1fr; gap: 4px; line-height: 1.6;">
-                                <span style="color:#888">开盘:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${item.open.toFixed(3)}</span>
-                                <span style="color:#888">最高:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${item.high.toFixed(3)}</span>
-                                <span style="color:#888">最低:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${item.low.toFixed(3)}</span>
-                                <span style="color:#888">收盘:</span> <span style="text-align:right; font-family:monospace; color:${colorPrice}">${item.close.toFixed(3)}</span>
+                                <span style="color:#888">开盘:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${formatPrice(item.open)}</span>
+                                <span style="color:#888">最高:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${formatPrice(item.high)}</span>
+                                <span style="color:#888">最低:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${formatPrice(item.low)}</span>
+                                <span style="color:#888">收盘:</span> <span style="text-align:right; font-family:monospace; color:${colorPrice}">${formatPrice(item.close)}</span>
                                 ${preCloseHtml}
                                 <span style="color:#888">成交:</span> <span style="text-align:right; font-family:monospace; color:#ccc">${(volVal || 0).toLocaleString()}</span>
                             </div>
@@ -521,12 +552,12 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                     },
                     axisLabel: {
                         color: '#888',
-                        formatter: (value) => value.toFixed(3)
+                        formatter: (value) => formatPrice(value)
                     },
                     axisPointer: {
                         snap: true,
                         label: {
-                            precision: 3
+                            precision: isGoldRMB ? 2 : 3
                         }
                     }
                 },
@@ -612,7 +643,7 @@ const VolatilityChart = ({ data, dailyInfo, gridStep, gridStepUnit, initialPrice
                         symbol: ['none', 'none'],
                         data: [{
                             yAxis: profileResult.pocPrice,
-                            label: { position: 'insideStartTop', formatter: 'POC', color: vpvrTheme.stroke.replace('0.25', '0.9'), fontSize: 10, distance: 0 },
+                            label: { position: 'insideStartTop', formatter: `POC: ${formatPrice(profileResult.pocPrice)}`, color: vpvrTheme.stroke.replace('0.25', '0.9'), fontSize: 10, distance: 0 },
                             lineStyle: { color: vpvrTheme.stroke.replace('0.25', '0.7'), type: 'dotted', width: 2 }
                         }],
                         silent: true

@@ -6,17 +6,23 @@ import CyberDatePicker from './CyberDatePicker';
 import GridDensityChart from './GridDensityChart';
 import ParameterSweepChart from './ParameterSweepChart';
 
-const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
+const SimulationPanel = ({ availableDates, initialBasePrice, symbol, goldPriceUnit = 'USD/oz', usdCnyRate = 7.2, goldAdjustment = 0 }) => {
     const [config, setConfig] = useState(() => {
+        const isGoldRMB = symbol === 'XAU' && goldPriceUnit === 'RMB/g';
+        const safeRate = parseFloat(usdCnyRate) || 7.2;
+        const safeAdj = parseFloat(goldAdjustment) || 0;
+        const goldFactor = safeRate / 31.1035;
+        const initialDisplayPrice = (isGoldRMB && initialBasePrice) ? (initialBasePrice * goldFactor + safeAdj).toFixed(2) : (initialBasePrice || 1.100);
+
         const defaults = {
             startDate: availableDates.length > 0 ? availableDates[availableDates.length - 1] : '2026-01-01',
-            basePrice: initialBasePrice || 1.100,
+            basePrice: initialDisplayPrice,
             gridStep: 0.005,
             minStep: 0.5,
             maxStep: 3.0,
             stepInterval: 0.1,
             gridStepType: 'percent',
-            amountPerGrid: 2000,
+            amountPerGrid: isGoldRMB ? 3000 : 2000,
             commissionRate: 0.0001,
             minCommission: 0.2,
             slippageRate: 0.001, // 0.1% slippage buffer default
@@ -86,9 +92,11 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                 if (dailies && dailies.length > 0) {
                     const openPrice = dailies[0].open;
                     if (openPrice) {
+                        const isGoldRMB = symbol === 'XAU' && goldPriceUnit === 'RMB/g';
+                        const val = isGoldRMB ? (openPrice * usdCnyRate / 31.1035) : openPrice;
                         setConfig(prev => ({
                             ...prev,
-                            basePrice: openPrice.toFixed(3)
+                            basePrice: isGoldRMB ? val.toFixed(2) : val.toFixed(3)
                         }));
                     }
                 }
@@ -103,41 +111,106 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
     const handleSimulate = async () => {
         setLoading(true);
         try {
+            const isGoldRMB = symbol === 'XAU' && goldPriceUnit === 'RMB/g';
+            const safeRate = parseFloat(usdCnyRate) || 7.2;
+            const safeAdj = parseFloat(goldAdjustment) || 0;
+            const goldFactor = safeRate / 31.1035;
+
+            const backwardPriceCvt = (p) => (isGoldRMB && p != null) ? (p - safeAdj) / goldFactor : p;
+            const backwardStepCvt = (p) => (isGoldRMB && p != null) ? p / goldFactor : p;
+
+            const finalBasePrice = backwardPriceCvt(parseFloat(config.basePrice));
+            const finalGridStep = config.gridStepType === 'value' ? backwardStepCvt(parseFloat(config.gridStep)) : parseFloat(config.gridStep);
+            const finalMinStep = config.gridStepType === 'value' ? backwardStepCvt(parseFloat(config.minStep)) : parseFloat(config.minStep);
+            const finalMaxStep = config.gridStepType === 'value' ? backwardStepCvt(parseFloat(config.maxStep)) : parseFloat(config.maxStep);
+            const finalStepInterval = config.gridStepType === 'value' ? backwardStepCvt(parseFloat(config.stepInterval)) : parseFloat(config.stepInterval);
+
+            // amountPerGrid represents Shares, initialCapital represents Cash
+            const finalAmountPerGrid = isGoldRMB ? parseFloat(config.amountPerGrid) / 31.1035 : parseFloat(config.amountPerGrid);
+            const finalInitialCapital = isGoldRMB ? parseFloat(config.initialCapital) / usdCnyRate : parseFloat(config.initialCapital);
+            const finalInitialShares = isGoldRMB ? parseFloat(config.initialShares) / 31.1035 : parseFloat(config.initialShares);
+
+            const scaleCash = (v) => v != null && isGoldRMB ? v * safeRate : v;
+            const scaleShares = (v) => v != null && isGoldRMB ? v * 31.1035 : v;
+            const scalePrice = (v) => v != null && isGoldRMB ? (v * goldFactor + safeAdj) : v;
+
+            const applyForwardScale = (res) => {
+                if (!isGoldRMB || !res) return res;
+                res.totalProfit = scaleCash(res.totalProfit);
+                res.maxDrawdownAmount = scaleCash(res.maxDrawdownAmount);
+                res.maxCapitalRequired = scaleCash(res.maxCapitalRequired);
+                res.totalFloating = scaleCash(res.totalFloating);
+                res.totalYieldAmount = scaleCash(res.totalYieldAmount);
+                res.netPosition = scaleShares(res.netPosition);
+                if (res.dailyStats) {
+                    res.dailyStats = res.dailyStats.map(s => ({
+                        ...s,
+                        commission: scaleCash(s.commission),
+                        realizedProfit: scaleCash(s.realizedProfit),
+                        totalProfit: scaleCash(s.totalProfit),
+                        floatProfit: scaleCash(s.floatProfit),
+                        closePrice: scalePrice(s.closePrice)
+                    }));
+                }
+                if (res.trades) {
+                    res.trades = res.trades.map(t => ({
+                        ...t,
+                        price: scalePrice(t.price),
+                        profit: scaleCash(t.profit),
+                        fee: scaleCash(t.fee)
+                    }));
+                }
+                return res;
+            };
+
+            const applyBatchForwardScale = (batchResArr) => {
+                if (!isGoldRMB || !batchResArr) return batchResArr;
+                return batchResArr.map(res => ({
+                    ...res,
+                    step: config.gridStepType === 'value' ? scalePrice(res.step) : res.step, // percent stays percent
+                    gridProfit: scaleCash(res.gridProfit),
+                    floatProfit: scaleCash(res.floatProfit),
+                    totalProfit: scaleCash(res.totalProfit),
+                    netPosition: scaleShares(res.netPosition),
+                    maxDrawdownAmount: scaleCash(res.maxDrawdownAmount),
+                }));
+            };
+
             if (simMode === 'single') {
-                const res = await runSimulation({
+                let res = await runSimulation({
                     ...config,
                     symbol: symbol,
-                    basePrice: parseFloat(config.basePrice),
-                    gridStep: parseFloat(config.gridStep),
-                    amountPerGrid: parseFloat(config.amountPerGrid),
+                    basePrice: finalBasePrice,
+                    gridStep: finalGridStep,
+                    amountPerGrid: finalAmountPerGrid,
                     commissionRate: parseFloat(config.commissionRate),
                     minCommission: parseFloat(config.minCommission),
                     slippageRate: parseFloat(config.slippageRate || 0),
-                    initialShares: parseInt(config.initialShares) || 0,
-                    initialCapital: parseFloat(config.initialCapital) || 0
+                    initialShares: finalInitialShares || 0,
+                    initialCapital: finalInitialCapital
                 });
+                res = applyForwardScale(res);
                 console.log("Simulation Result:", res);
                 setResult(res);
                 setBatchResult(null);
             } else {
-                // We use dynamic imports or exist import for runBatchSimulation
-                // Need to ensure runBatchSimulation is imported at the top!
                 const payload = {
                     ...config,
                     symbol: symbol,
-                    basePrice: parseFloat(config.basePrice),
-                    minStep: parseFloat(config.minStep),
-                    maxStep: parseFloat(config.maxStep),
-                    stepInterval: parseFloat(config.stepInterval),
-                    amountPerGrid: parseFloat(config.amountPerGrid),
+                    basePrice: finalBasePrice,
+                    minStep: finalMinStep,
+                    maxStep: finalMaxStep,
+                    stepInterval: finalStepInterval,
+                    amountPerGrid: finalAmountPerGrid,
                     commissionRate: parseFloat(config.commissionRate),
                     minCommission: parseFloat(config.minCommission),
                     slippageRate: parseFloat(config.slippageRate || 0),
-                    initialShares: parseInt(config.initialShares) || 0,
-                    initialCapital: parseFloat(config.initialCapital) || 0
+                    initialShares: finalInitialShares || 0,
+                    initialCapital: finalInitialCapital
                 };
                 console.log("Sending Batch Request:", payload);
-                const res = await runBatchSimulation(payload);
+                let res = await runBatchSimulation(payload);
+                res = applyBatchForwardScale(res);
                 console.log("Batch Simulation Result:", res);
                 // Sort by Step ascending
                 const sortedRes = res.sort((a, b) => a.step - b.step);
@@ -159,6 +232,12 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
             setLoading(false);
         }
     };
+
+    const isGoldRMB = symbol === 'XAU' && goldPriceUnit === 'RMB/g';
+    const cashSymbol = isGoldRMB ? '￥' : '$';
+    const formatPriceSim = (val) => val != null ? val.toFixed(isGoldRMB ? 2 : 3) : '-';
+    // Profit/Cash usually stays 2 decimal places regardless of symbol
+    const formatCashSim = (val) => val != null ? val.toFixed(2) : '-';
 
     return (
         <div className="flex flex-col gap-6 h-full pb-12">
@@ -308,7 +387,7 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             <span className="text-indigo-400/70 text-[10px] lowercase normal-case">填 0 为不限,自核所需总金</span>
                         </label>
                         <div className="relative flex items-center">
-                            <span className="absolute left-4 top-3.5 text-slate-500 font-mono">¥</span>
+                            <span className="absolute left-4 top-3.5 text-slate-500 font-mono">{cashSymbol}</span>
                             <input
                                 type="number" step="1000"
                                 className="w-full bg-black/20 border border-indigo-500/30 rounded-xl pl-8 pr-4 py-3 text-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
@@ -428,13 +507,13 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                                 {res.isBest && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">最高利润</span>}
                                             </td>
                                             <td className={`px-6 py-4 text-right ${res.gridProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                ¥{res.gridProfit?.toFixed(2)}
+                                                {cashSymbol}{res.gridProfit?.toFixed(2)}
                                             </td>
                                             <td className={`px-6 py-4 text-right ${res.floatProfit > 0 ? 'text-emerald-400' : res.floatProfit < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                                ¥{res.floatProfit?.toFixed(2)}
+                                                {cashSymbol}{res.floatProfit?.toFixed(2)}
                                             </td>
                                             <td className={`px-6 py-4 text-right font-bold ${res.totalProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                ¥{res.totalProfit?.toFixed(2)}
+                                                {cashSymbol}{res.totalProfit?.toFixed(2)}
                                             </td>
                                             <td className="px-6 py-4 text-right font-mono">
                                                 <div className="flex flex-col items-end">
@@ -509,9 +588,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                             color={(result.cagr || 0) >= 0 ? "text-emerald-400" : "text-slate-400"}
                             tooltip="复合年均增长率。它是将短期的区间收益『放大』到一年长度的结果。如果回测天数很少，该数值会显得非常激进（正负都会放大），仅供横向对比参考。"
                         />
-                        <StatCard icon={<DollarSign />} label="网格利润 (已实现)" value={(result.totalProfit || 0).toFixed(2)} unit="元" color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="这仅仅是已经完成买卖对冲的网格利润，不包含您当前手中持仓的浮动盈亏。" />
-                        <StatCard icon={<TrendingUp />} label="当前浮动盈亏" value={(result.totalFloating || 0).toFixed(2)} unit="元" color={(result.totalFloating || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="由于目前持有底仓及网格沉淀仓位，因价格上涨或下跌而产生的未实现盈亏。" />
-                        <StatCard icon={<DollarSign />} label="策略总利润" value={(result.totalYieldAmount || 0).toFixed(2)} unit="元" color={(result.totalYieldAmount || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="包含网格已确定的利润和当前持仓的浮动盈亏总和。这是您账户在这个周期内的真实绝对收益。" />
+                        <StatCard icon={<DollarSign />} label="网格利润 (已实现)" value={(result.totalProfit || 0).toFixed(2)} unit={isGoldRMB ? "元" : ""} color={(result.totalProfit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="这仅仅是已经完成买卖对冲的网格利润，不包含您当前手中持仓的浮动盈亏。" />
+                        <StatCard icon={<TrendingUp />} label="当前浮动盈亏" value={(result.totalFloating || 0).toFixed(2)} unit={isGoldRMB ? "元" : ""} color={(result.totalFloating || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="由于目前持有底仓及网格沉淀仓位，因价格上涨或下跌而产生的未实现盈亏。" />
+                        <StatCard icon={<DollarSign />} label="策略总利润" value={(result.totalYieldAmount || 0).toFixed(2)} unit={isGoldRMB ? "元" : ""} color={(result.totalYieldAmount || 0) >= 0 ? "text-emerald-400" : "text-rose-400"} tooltip="包含网格已确定的利润和当前持仓的浮动盈亏总和。这是您账户在这个周期内的真实绝对收益。" />
                         <StatCard icon={<MoveHorizontal />} label="当前持仓" value={result.netPosition || 0} unit="股" color={result.netPosition > 0 ? "text-indigo-400" : result.netPosition < 0 ? "text-amber-400" : "text-slate-400"} />
                         <StatCard icon={<RefreshCw />} label="成交次数" value={result.totalTx || 0} unit="笔" color="text-white" />
                         {(result.missedBuys > 0 || config.initialCapital > 0) && (
@@ -574,15 +653,15 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                         {result.dailyStats?.map(stat => (
                                             <tr key={stat.date} className="hover:bg-white/5 transition-colors">
                                                 <td className="px-6 py-4 text-slate-400">{stat.date}</td>
-                                                <td className="px-6 py-4 text-right text-slate-400">{stat.closePrice?.toFixed(3)}</td>
+                                                <td className="px-6 py-4 text-right text-slate-400">{formatPriceSim(stat.closePrice)}</td>
                                                 <td className="px-6 py-4 text-right text-emerald-500 font-bold">{stat.buyCount || '-'}</td>
                                                 <td className="px-6 py-4 text-right text-rose-500 font-bold">{stat.sellCount || '-'}</td>
-                                                <td className="px-6 py-4 text-right text-amber-500/70">{stat.commission?.toFixed(2)}</td>
+                                                <td className="px-6 py-4 text-right text-amber-500/70">{cashSymbol}{stat.commission?.toFixed(2)}</td>
                                                 <td className={`px-6 py-4 text-right font-bold ${stat.realizedProfit > 0 ? 'text-emerald-400' : stat.realizedProfit < 0 ? 'text-rose-400' : 'text-slate-600'}`}>
-                                                    {stat.realizedProfit !== 0 && stat.realizedProfit !== undefined ? stat.realizedProfit?.toFixed(2) : '-'}
+                                                    {stat.realizedProfit !== 0 && stat.realizedProfit !== undefined ? `${cashSymbol}${stat.realizedProfit?.toFixed(2)}` : '-'}
                                                 </td>
                                                 <td className={`px-6 py-4 text-right font-bold ${stat.netProfit > 0 ? 'text-emerald-400' : stat.netProfit < 0 ? 'text-rose-400' : 'text-slate-600'}`}>
-                                                    {stat.netProfit !== 0 && stat.netProfit !== undefined ? stat.netProfit?.toFixed(2) : '-'}
+                                                    {stat.netProfit !== 0 && stat.netProfit !== undefined ? `${cashSymbol}${stat.netProfit?.toFixed(2)}` : '-'}
                                                 </td>
                                             </tr>
                                         ))}
@@ -617,9 +696,9 @@ const SimulationPanel = ({ availableDates, initialBasePrice, symbol }) => {
                                                         {trade.type === 'BUY' ? '买入' : '卖出'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-bold">{trade.price?.toFixed(3)}</td>
-                                                <td className="px-6 py-4 text-right text-slate-400">{trade.amount}</td>
-                                                <td className="px-6 py-4 text-right text-amber-500/70">{trade.comm?.toFixed(2)}</td>
+                                                <td className="px-6 py-4 text-right font-bold">{formatPriceSim(trade.price)}</td>
+                                                <td className="px-6 py-4 text-right text-slate-400">{isGoldRMB ? (trade.amount * 31.1035).toFixed(2) : trade.amount}</td>
+                                                <td className="px-6 py-4 text-right text-amber-500/70">{cashSymbol}{trade.comm?.toFixed(2)}</td>
                                             </tr>
                                         ))}
                                         {(!result.trades || result.trades.length === 0) && (
