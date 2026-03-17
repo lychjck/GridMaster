@@ -62,6 +62,11 @@ export const addSymbol = async (symbol) => {
     return response.data;
 };
 
+export const deleteSymbol = async (symbol) => {
+    const response = await api.delete(`/symbols/${symbol}`);
+    return response.data;
+};
+
 export const refreshData = async (symbol) => {
     const response = await api.post('/refresh', { symbol });
     return response.data;

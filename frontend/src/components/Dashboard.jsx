@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
-import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, runSimulation, refreshData } from '../lib/api';
+import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, deleteSymbol, runSimulation, refreshData } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
@@ -107,6 +107,25 @@ const Dashboard = () => {
             setAddingLoading(false);
         }
     }
+
+    const handleDeleteSymbol = async (e, symbolCode) => {
+        e.stopPropagation();
+        if (!window.confirm(`确定要删除 ${symbolCode} 及其所有历史数据吗？`)) {
+            return;
+        }
+
+        try {
+            await deleteSymbol(symbolCode);
+            await fetchSymbols();
+            // If the deleted symbol was the selected one, switch to another
+            if (selectedSymbol === symbolCode) {
+                setSelectedSymbol('512890'); // Fallback to default
+                setSelectedDate('');
+            }
+        } catch (e) {
+            alert("删除失败: " + e.message);
+        }
+    };
 
     useEffect(() => {
         fetchSymbols();
@@ -446,8 +465,9 @@ const Dashboard = () => {
 
                                 <div className="max-h-60 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                                     {filteredSymbols.map(s => (
-                                        <button
+                                        <div
                                             key={s.code}
+                                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors group/item relative ${selectedSymbol === s.code ? 'bg-indigo-500/20 shadow-[inset_0_0_10px_rgba(99,102,241,0.2)] border border-indigo-500/30' : 'border border-transparent hover:bg-white/5'}`}
                                             onClick={() => {
                                                 setSelectedSymbol(s.code);
                                                 setSelectedDate('');
@@ -455,14 +475,22 @@ const Dashboard = () => {
                                                 setIsAssetSwitcherOpen(false);
                                                 setAssetSearchTerm('');
                                             }}
-                                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors group/item ${selectedSymbol === s.code ? 'bg-indigo-500/20 shadow-[inset_0_0_10px_rgba(99,102,241,0.2)] border border-indigo-500/30' : 'border border-transparent hover:bg-white/5'}`}
                                         >
-                                            <div className="flex flex-col gap-0.5">
+                                            <div className="flex flex-col gap-0.5 cursor-pointer flex-1">
                                                 <span className={`text-sm font-medium ${selectedSymbol === s.code ? 'text-indigo-300' : 'text-slate-300 group-hover/item:text-slate-100'}`}>{s.name}</span>
                                                 <span className="text-[10px] text-slate-500 font-mono group-hover/item:text-slate-400">{s.code}</span>
                                             </div>
-                                            {selectedSymbol === s.code && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                                        </button>
+                                            <div className="flex items-center gap-2">
+                                                {selectedSymbol === s.code && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                                                <button
+                                                    onClick={(e) => handleDeleteSymbol(e, s.code)}
+                                                    className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-0 group-hover/item:opacity-100 transition-all"
+                                                    title="删除此股票"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
 

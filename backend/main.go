@@ -63,7 +63,7 @@ func main() {
 
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -83,6 +83,31 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"data": symbols})
+	})
+
+	// DELETE /api/symbols/:symbol - Remove a symbol and its data
+	r.DELETE("/api/symbols/:symbol", func(c *gin.Context) {
+		symbol := c.Param("symbol")
+		if symbol == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Symbol is required"})
+			return
+		}
+
+		// Delete from symbols table
+		if err := DB.Delete(&Symbol{}, "symbol = ?", symbol).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Clean up kline data
+		tables := []string{"klines_1m", "klines_5m", "klines_daily"}
+		for _, table := range tables {
+			if err := DB.Table(table).Where("symbol = ?", symbol).Delete(nil).Error; err != nil {
+				log.Printf("Warning: Failed to clean up table %s for symbol %s: %v", table, symbol, err)
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Symbol and data removed successfully", "symbol": symbol})
 	})
 
 	// POST /api/symbols - Add new symbol (trigger python fetch)
