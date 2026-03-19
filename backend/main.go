@@ -58,8 +58,8 @@ func main() {
 	DB.AutoMigrate(&Symbol{})
 
 	// Start Background Refresh Tasks
-	go startBackgroundRefresh()
-	go startGoldRefresh()
+	go startAStockRefresh()
+	go startBinanceRefresh()
 
 	r := gin.Default()
 
@@ -153,7 +153,7 @@ func main() {
 			for scanner.Scan() {
 				log.Printf("[%s LOG] %s", s, scanner.Text())
 			}
-			
+
 			if err := cmd.Wait(); err != nil {
 				log.Printf("Script finished with error for %s: %v", s, err)
 			} else {
@@ -317,51 +317,89 @@ func main() {
 	r.Run(":8080")
 }
 
-func startBackgroundRefresh() {
-	log.Println("Starting background data refresh task...")
-	for {
-		// Wait for next interval: e.g. every 1 hour
-		// We use a shorter interval for initial debugging/testing if needed,
-		// but 1h is reasonable for market data updates.
-		log.Println("Background Refresh: Starting scan for all symbols...")
+func isTradingTime() bool {
+	now := time.Now()
+	hour := now.Hour()
+	minute := now.Minute()
+	weekday := now.Weekday()
 
-		var symbols []Symbol
-		if err := DB.Find(&symbols).Error; err != nil {
-			log.Printf("Background Refresh: Error fetching symbols: %v\n", err)
-		} else {
-			for _, s := range symbols {
-				log.Printf("Background Refresh: Updating data for %s...\n", s.Symbol)
-				cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s.Symbol, "--count", "800")
-				cmd.Dir = ".."
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					log.Printf("Background Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
-				} else {
-					log.Printf("Background Refresh: Success for %s", s.Symbol)
+	// 周末不交易
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return false
+	}
+
+	// 交易时间：9:30-11:30, 13:00-15:00
+	totalMinutes := hour*60 + minute
+	morningStart := 9*60 + 30
+	morningEnd := 11*60 + 30
+	afternoonStart := 13 * 60
+	afternoonEnd := 15 * 60
+
+	return (totalMinutes >= morningStart && totalMinutes < morningEnd) ||
+		(totalMinutes >= afternoonStart && totalMinutes < afternoonEnd)
+}
+
+func startAStockRefresh() {
+	log.Println("Starting A-Stock background refresh task (every 5 min during trading hours)...")
+	for {
+		if isTradingTime() {
+			log.Println("A-Stock Refresh: Trading time, scanning symbols...")
+
+			var symbols []Symbol
+			if err := DB.Find(&symbols).Error; err != nil {
+				log.Printf("A-Stock Refresh: Error fetching symbols: %v\n", err)
+			} else {
+				for _, s := range symbols {
+					// 跳过币安和黄金
+					if strings.HasSuffix(strings.ToUpper(s.Symbol), "USDT") || strings.ToUpper(s.Symbol) == "XAU" {
+						continue
+					}
+
+					log.Printf("A-Stock Refresh: Updating %s...\n", s.Symbol)
+					cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s.Symbol, "--count", "800")
+					cmd.Dir = ".."
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						log.Printf("A-Stock Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
+					} else {
+						log.Printf("A-Stock Refresh: Success for %s", s.Symbol)
+					}
+					time.Sleep(5 * time.Second)
 				}
-				// Sleep a bit between symbols to avoid heavy load or rate limiting
-				time.Sleep(5 * time.Second)
 			}
+		} else {
+			log.Println("A-Stock Refresh: Non-trading time, skipping...")
 		}
 
-		log.Println("Background Refresh: Finished current scan. Sleeping for 1 hour.")
-		time.Sleep(1 * time.Hour)
+		time.Sleep(5 * time.Minute)
 	}
 }
 
-func startGoldRefresh() {
-	log.Println("Starting background gold data refresh task (every 2 minutes)...")
+func startBinanceRefresh() {
+	log.Println("Starting Binance background refresh task (every 1 min)...")
 	for {
-		log.Println("Background Refresh: Updating Gold data (XAU)...")
-		cmd := exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
-		cmd.Dir = ".."
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("Background Gold Refresh Error: %v\nOutput: %s", err, string(out))
+		var symbols []Symbol
+		if err := DB.Find(&symbols).Error; err != nil {
+			log.Printf("Binance Refresh: Error fetching symbols: %v\n", err)
 		} else {
-			log.Printf("Background Gold Refresh Success")
+			for _, s := range symbols {
+				if !strings.HasSuffix(strings.ToUpper(s.Symbol), "USDT") {
+					continue
+				}
+
+				log.Printf("Binance Refresh: Updating %s...\n", s.Symbol)
+				cmd := exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", s.Symbol)
+				cmd.Dir = ".."
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					log.Printf("Binance Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
+				} else {
+					log.Printf("Binance Refresh: Success for %s", s.Symbol)
+				}
+				time.Sleep(2 * time.Second)
+			}
 		}
-		// 黄金市场24h交易频繁，这里设置2分钟同步一次
-		time.Sleep(2 * time.Minute)
+
+		time.Sleep(1 * time.Minute)
 	}
 }

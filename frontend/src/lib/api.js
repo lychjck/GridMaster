@@ -5,6 +5,29 @@ const api = axios.create({
     timeout: 60000,
 });
 
+const utcToBeijing = (ts) => {
+    if (!ts) return ts;
+    const hasTime = ts.includes(' ');
+    const isoStr = hasTime ? ts.replace(' ', 'T') + 'Z' : ts + 'T00:00:00Z';
+    const d = new Date(isoStr);
+    // 使用 UTC 方法，避免本地时区干扰
+    const utcMs = d.getTime() + 8 * 3600 * 1000;
+    const pad = (n) => String(n).padStart(2, '0');
+    const y = new Date(utcMs).getUTCFullYear();
+    const m = new Date(utcMs).getUTCMonth() + 1;
+    const day = new Date(utcMs).getUTCDate();
+    const h = new Date(utcMs).getUTCHours();
+    const min = new Date(utcMs).getUTCMinutes();
+    const date = `${y}-${pad(m)}-${pad(day)}`;
+    if (!hasTime) return date;
+    return `${date} ${pad(h)}:${pad(min)}`;
+};
+
+const convertTimestamps = (data, symbol) => {
+    if (!symbol?.toUpperCase().endsWith('USDT')) return data;
+    return data.map(item => ({ ...item, timestamp: utcToBeijing(item.timestamp) }));
+};
+
 // dateStr optional: "YYYY-MM-DD"
 // symbol optional: "512890"
 export const getKlines = async (dateStr = '', symbol = '') => {
@@ -18,7 +41,7 @@ export const getKlines = async (dateStr = '', symbol = '') => {
     }
 
     const response = await api.get(url);
-    return response.data.data;
+    return convertTimestamps(response.data.data, symbol);
 };
 
 export const getDailyKlines = async (dateStr = '', symbol = '') => {
@@ -31,7 +54,7 @@ export const getDailyKlines = async (dateStr = '', symbol = '') => {
         url += '?' + params.join('&');
     }
     const response = await api.get(url);
-    return response.data.data;
+    return convertTimestamps(response.data.data, symbol);
 };
 
 export const getAvailableDates = async (symbol = '') => {
