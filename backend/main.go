@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"net/http"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -125,68 +127,93 @@ func main() {
 			return
 		}
 
-		// Trigger Python Script Synchronously
-		var cmd *exec.Cmd
-		if req.Symbol == "XAU" {
-			cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
-		} else {
-			cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", req.Symbol, "--count", "800")
-		}
-		cmd.Dir = ".."
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("Error fetching data for %s: %v\nOutput: %s", req.Symbol, err, string(out))
-		} else {
-			log.Printf("Successfully fetched data for %s", req.Symbol)
-		}
+		// Trigger Python Script Asynchronously with Real-time Logging
+		go func(s string) {
+			var cmd *exec.Cmd
+			symbolUpper := strings.ToUpper(s)
+			if symbolUpper == "XAU" {
+				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+			} else if strings.HasSuffix(symbolUpper, "USDT") {
+				cmd = exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", symbolUpper)
+			} else {
+				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
+			}
+			cmd.Dir = ".."
 
-		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch completed", "symbol": req.Symbol})
+			// Capture stdout and stderr
+			stdout, _ := cmd.StdoutPipe()
+			cmd.Stderr = cmd.Stdout
+			if err := cmd.Start(); err != nil {
+				log.Printf("Failed to start script for %s: %v", s, err)
+				return
+			}
+
+			// Stream output line by line
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				log.Printf("[%s LOG] %s", s, scanner.Text())
+			}
+			
+			if err := cmd.Wait(); err != nil {
+				log.Printf("Script finished with error for %s: %v", s, err)
+			} else {
+				log.Printf("Successfully completed all tasks for %s", s)
+			}
+		}(req.Symbol)
+
+		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started in background", "symbol": req.Symbol})
 	})
 
 	// POST /api/refresh - Trigger manual data refresh
 	r.POST("/api/refresh", func(c *gin.Context) {
-		var req AddSymbolRequest // Reuse struct or create new one if needed only for symbol
-		// If reusing, json key is "symbol".
+		var req AddSymbolRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Trigger Python Script Synchronously
-		var cmd *exec.Cmd
-		if req.Symbol == "XAU" {
-			cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
-		} else {
-			// Reuse the same script logic
-			// Using --force is NOT recommended for refresh as we want incremental.
-			// So just call it normally, it has smart stitching.
-			cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", req.Symbol, "--count", "800")
-		}
-		cmd.Dir = ".."
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("Error refreshing data for %s: %v\nOutput: %s", req.Symbol, err, string(out))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to refresh data", "details": string(out)})
-			return
-		}
-		log.Printf("Successfully refreshed data for %s", req.Symbol)
+		// Trigger Python Script Asynchronously with Real-time Logging
+		go func(s string) {
+			var cmd *exec.Cmd
+			symbolUpper := strings.ToUpper(s)
+			if symbolUpper == "XAU" {
+				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+			} else if strings.HasSuffix(symbolUpper, "USDT") {
+				cmd = exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", symbolUpper)
+			} else {
+				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
+			}
+			cmd.Dir = ".."
 
-		c.JSON(http.StatusOK, gin.H{"message": "Refresh completed", "symbol": req.Symbol})
+			stdout, _ := cmd.StdoutPipe()
+			cmd.Stderr = cmd.Stdout
+			if err := cmd.Start(); err != nil {
+				log.Printf("Failed to start refresh script for %s: %v", s, err)
+				return
+			}
+
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				log.Printf("[%s REFRESH] %s", s, scanner.Text())
+			}
+
+			if err := cmd.Wait(); err != nil {
+				log.Printf("Refresh script finished with error for %s: %v", s, err)
+			} else {
+				log.Printf("Successfully completed refresh for %s", s)
+			}
+		}(req.Symbol)
+
+		c.JSON(http.StatusOK, gin.H{"message": "Refresh started in background", "symbol": req.Symbol})
 	})
 
 	r.GET("/api/dates", func(c *gin.Context) {
 		symbol := c.Query("symbol")
 		var dates []string
 
-		// 改为从分时线表中获取日期，确保有数据可画图
-		query := `
-			SELECT DISTINCT substr(timestamp, 1, 10) as date 
-			FROM (
-				SELECT timestamp, symbol FROM klines_1m
-				UNION
-				SELECT timestamp, symbol FROM klines_5m
-			)
-		`
+		// 优化方案：直接从日线表获取日期，速度极快
+		// 因为我们同步时保证了 1d, 5m, 1m 数据的一致性
+		query := `SELECT DISTINCT timestamp as date FROM klines_daily`
 		var params []interface{}
 
 		if symbol != "" {
@@ -205,31 +232,40 @@ func main() {
 	})
 
 	r.GET("/api/klines", func(c *gin.Context) {
-		dateParam := c.Query("date") // Optional date filter
+		dateParam := c.Query("date")
 		symbol := c.Query("symbol")
 		if symbol == "" {
-			symbol = "512890" // Default
+			symbol = "512890"
 		}
 
 		var klines5m, klines1m []Kline
 
-		// 1. Fetch data (filtered if date provided)
+		// 1. 先探测 5m 表（数据量小，速度快）
 		query5m := DB.Table("klines_5m").Where("symbol = ?", symbol)
-		query1m := DB.Table("klines_1m").Where("symbol = ?", symbol)
-
 		if dateParam != "" {
 			query5m = query5m.Where("timestamp LIKE ?", dateParam+"%")
-			query1m = query1m.Where("timestamp LIKE ?", dateParam+"%")
 		}
-
 		if err := query5m.Find(&klines5m).Error; err != nil {
 			log.Println("Error fetching 5m:", err)
+		}
+
+		// 2. 如果 5m 都没有数据，说明这天肯定没拉到，直接返回空，不要去碰巨大的 1m 表
+		if len(klines5m) == 0 {
+			c.JSON(http.StatusOK, gin.H{"data": []Kline{}})
+			return
+		}
+
+		// 3. 5m 有数据，再去尝试加载更高精度的 1m 表
+		query1m := DB.Table("klines_1m").Where("symbol = ?", symbol)
+		if dateParam != "" {
+			query1m = query1m.Where("timestamp LIKE ?", dateParam+"%")
 		}
 		if err := query1m.Find(&klines1m).Error; err != nil {
 			log.Println("Error fetching 1m:", err)
 		}
 
-		// 2. Identification of dates that have 1m data (Logic simplifed if filtered by date)
+		// 4. 合并逻辑：如果有 1m 则用 1m，否则降级回 5m
+		// (以下保持原有合并逻辑)...
 		datesWith1m := make(map[string]bool)
 		for _, k := range klines1m {
 			if len(k.Timestamp) >= 10 {
@@ -238,13 +274,9 @@ func main() {
 			}
 		}
 
-		// 3. Merge: Use 1m if available, otherwise 5m
 		var finalData []Kline
-
-		// Add all 1m data
 		finalData = append(finalData, klines1m...)
 
-		// Add 5m data ONLY if that date doesn't exist in 1m
 		for _, k := range klines5m {
 			if len(k.Timestamp) >= 10 {
 				date := k.Timestamp[:10]
@@ -254,7 +286,6 @@ func main() {
 			}
 		}
 
-		// 4. Sort by timestamp
 		sort.Slice(finalData, func(i, j int) bool {
 			return finalData[i].Timestamp < finalData[j].Timestamp
 		})

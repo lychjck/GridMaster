@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/var/www/wangge/src/backend
+Environment="BINANCE_BASE_URL=https://lychjck.qzz.io"
 ExecStart=/var/www/wangge/src/backend/wangge-backend
 Restart=always
 RestartSec=5

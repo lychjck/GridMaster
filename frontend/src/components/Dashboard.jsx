@@ -23,6 +23,7 @@ const Dashboard = () => {
     const [newSymbol, setNewSymbol] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const [addingLoading, setAddingLoading] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Asset Switcher UI State
     const [isAssetSwitcherOpen, setIsAssetSwitcherOpen] = useState(false);
@@ -89,11 +90,17 @@ const Dashboard = () => {
     };
 
     const handleAddSymbol = async () => {
-        if (!newSymbol || (newSymbol.length !== 6 && newSymbol.toUpperCase() !== 'XAU')) {
-            alert("请输入有效代码（如股票6位，或XAU）");
+        const symbolUpper = newSymbol.toUpperCase();
+        const isXAU = symbolUpper === 'XAU';
+        const isUSDT = symbolUpper.endsWith('USDT');
+        const isSixDigit = /^\d{6}$/.test(newSymbol);
+
+        if (!newSymbol || (!isSixDigit && !isXAU && !isUSDT)) {
+            alert("请输入有效代码（如股票6位数字、XAU 或 BTCUSDT）");
             return;
         }
         setAddingLoading(true);
+        setIsSyncing(true);
         try {
             await addSymbol(newSymbol);
             await fetchSymbols();
@@ -105,6 +112,7 @@ const Dashboard = () => {
         } catch (e) {
             alert("添加失败: " + e.message);
             setAddingLoading(false);
+            setIsSyncing(false);
         }
     }
 
@@ -158,9 +166,9 @@ const Dashboard = () => {
     }, [goldAdjustment]);
 
     // 2. Fetch Detailed Klines & Daily Info when Date Selected
-    const fetchData = async () => {
+    const fetchData = async (isSilent = false) => {
         if (!selectedDate) return;
-        setLoading(true);
+        if (!isSilent) setLoading(true);
         try {
             const [klines, dailies] = await Promise.all([
                 getKlines(selectedDate, selectedSymbol),
@@ -200,54 +208,17 @@ const Dashboard = () => {
         } catch (err) {
             console.error("Fetch failed", err);
         } finally {
-            setLoading(false);
+            if (!isSilent) setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData();
-    }, [selectedDate, selectedSymbol, availableDates]);
+        fetchData(false);
+    }, [selectedDate, selectedSymbol]);
 
     // 3. Background Fetch for Auto Refresh (Silent, no loading indicator)
     const backgroundFetchData = async () => {
-        if (!selectedDate) return;
-        try {
-            const [klines, dailies] = await Promise.all([
-                getKlines(selectedDate, selectedSymbol),
-                getDailyKlines(selectedDate, selectedSymbol)
-            ]);
-
-            setData(klines);
-            setCurrentDayInfo(dailies.length > 0 ? dailies[0] : null);
-
-            // Fetch Pre-Close (Yesterday's Close)
-            let preCloseVal = null;
-            if (availableDates.length > 0) {
-                const idx = availableDates.indexOf(selectedDate);
-                if (idx > 0) {
-                    const prevDate = availableDates[idx - 1];
-                    try {
-                        const prevDailies = await getDailyKlines(prevDate, selectedSymbol);
-                        if (prevDailies.length > 0) {
-                            preCloseVal = prevDailies[0].close;
-                        }
-                    } catch (e) {
-                        console.error("Failed to fetch pre-close", e);
-                    }
-                } else if (dailies.length > 0 && dailies[0].pre_close) {
-                    preCloseVal = dailies[0].pre_close;
-                }
-            }
-            setPreClose(preCloseVal);
-
-            if (klines.length > 0 && !initialPrice) {
-                setInitialPrice(klines[0].open.toFixed(3));
-            }
-
-            calculateStats(klines);
-        } catch (err) {
-            console.error("Background fetch failed", err);
-        }
+        await fetchData(true);
     };
 
     // 自动刷新机制：仅在未进行模拟且查看当日图表时运行
@@ -377,28 +348,54 @@ const Dashboard = () => {
     };
 
     const handleRefresh = async () => {
-        setLoading(true);
+        setIsSyncing(true);
         try {
             await refreshData(selectedSymbol);
-            // Refresh available dates and switch to latest
-            const dates = await getAvailableDates(selectedSymbol);
-            setAvailableDates(dates);
-            if (dates.length > 0) {
-                const latest = dates[dates.length - 1];
-                if (latest !== selectedDate) {
-                    setSelectedDate(latest);
-                } else {
-                    // If date explains same, just fetch data
-                    fetchData();
-                }
-            }
         } catch (e) {
             console.error("Refresh failed", e);
             alert("刷新失败: " + e.message);
-        } finally {
-            setLoading(false);
+            setIsSyncing(false);
         }
     };
+
+    // New: Polling Effect for Auto-Sync
+    useEffect(() => {
+        if (!isSyncing) return;
+
+        console.log("Auto-sync active: Polling for data...");
+        
+        // Poll every 5 seconds
+        const pollInterval = setInterval(async () => {
+            try {
+                const dates = await getAvailableDates(selectedSymbol);
+                // If we got new dates, or current date has more data
+                setAvailableDates(prev => {
+                    if (dates.length > prev.length) {
+                        console.log("New data detected via auto-sync.");
+                        return dates;
+                    }
+                    return prev;
+                });
+                
+                // Silent refresh of current chart data
+                fetchData(true);
+            } catch (e) {
+                console.error("Polling failed", e);
+            }
+        }, 5000);
+
+        // Stop polling after 5 minutes
+        const stopPolling = setTimeout(() => {
+            setIsSyncing(false);
+            clearInterval(pollInterval);
+            console.log("Auto-sync stopped after timeout.");
+        }, 300000);
+
+        return () => {
+            clearInterval(pollInterval);
+            clearTimeout(stopPolling);
+        };
+    }, [isSyncing, selectedSymbol]);
 
     // Derived State for Switcher
     const currentSymbolObj = supportedSymbols.find(s => s.code === selectedSymbol);
@@ -421,7 +418,15 @@ const Dashboard = () => {
                             <div className="absolute inset-0 bg-white/20 rounded-xl animate-pulse opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
                         <div className="hidden sm:block">
-                            <h1 className="text-xl font-bold tracking-tight text-white group-hover:text-glow transition-all">GridMaster</h1>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-xl font-bold tracking-tight text-white group-hover:text-glow transition-all">GridMaster</h1>
+                                {isSyncing && (
+                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse">
+                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-ping"></div>
+                                        <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Syncing</span>
+                                    </div>
+                                )}
+                            </div>
                             <p className="text-[10px] text-indigo-200/60 font-mono tracking-wider uppercase">Quantitative Trading</p>
                         </div>
                     </div>

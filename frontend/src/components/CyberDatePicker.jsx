@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Calendar, X, ChevronUp } from 'lucide-react';
 
 const CyberDatePicker = ({
     selectedDate,
@@ -10,30 +10,38 @@ const CyberDatePicker = ({
     // Determine initial view date from selectedDate or latest available date
     const initialDate = selectedDate ? new Date(selectedDate) : new Date();
     const [viewDate, setViewDate] = useState(initialDate);
+    const [mode, setMode] = useState('days'); // 'days' | 'years'
 
-    // Helper: format YYYY-MM-DD
-    const formatDate = (d) => {
-        return d.toISOString().split('T')[0];
-    };
+    // Lookups for availability (Set for O(1))
+    const availableSet = useMemo(() => new Set(availableDates), [availableDates]);
+
+    // Extract available years for the year picker
+    const availableYears = useMemo(() => {
+        const years = new Set();
+        availableDates.forEach(d => {
+            const year = d.split('-')[0];
+            if (year) years.add(parseInt(year));
+        });
+        // Ensure current year is at least visible if no data
+        if (years.size === 0) years.add(new Date().getFullYear());
+        return Array.from(years).sort((a, b) => b - a);
+    }, [availableDates]);
+
+    const currentYear = viewDate.getFullYear();
+    const currentMonth = viewDate.getMonth();
 
     // Helper: Get days in month
     const getDaysInMonth = (year, month) => {
         return new Date(year, month + 1, 0).getDate();
     };
 
-    // Helper: Get day of week for 1st of month (0 = Sun, 6 = Sat)
+    // Helper: Get day of week for 1st of month
     const getFirstDayOfMonth = (year, month) => {
         return new Date(year, month, 1).getDay();
     };
 
-    const currentYear = viewDate.getFullYear();
-    const currentMonth = viewDate.getMonth();
-
     const daysInMonth = getDaysInMonth(currentYear, currentMonth);
     const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
-
-    // Lookups for availability (Set for O(1))
-    const availableSet = new Set(availableDates);
 
     // Navigation
     const prevMonth = (e) => {
@@ -45,19 +53,19 @@ const CyberDatePicker = ({
         setViewDate(new Date(currentYear, currentMonth + 1, 1));
     };
 
+    const handleYearSelect = (year) => {
+        setViewDate(new Date(year, currentMonth, 1));
+        setMode('days');
+    };
+
     // Generate Calendar Grid
     const renderCalendarDays = () => {
         const days = [];
-
-        // Padding for previous month
         for (let i = 0; i < firstDay; i++) {
             days.push(<div key={`pad-${i}`} className="h-8 w-8"></div>);
         }
 
-        // Actual Days
         for (let d = 1; d <= daysInMonth; d++) {
-            // Construct YYYY-MM-DD locally to avoid timezone shifts
-            // Format: YYYY-MM-DD (month is 0-indexed)
             const monthStr = String(currentMonth + 1).padStart(2, '0');
             const dayStr = String(d).padStart(2, '0');
             const dateStr = `${currentYear}-${monthStr}-${dayStr}`;
@@ -70,9 +78,7 @@ const CyberDatePicker = ({
                     key={dateStr}
                     onClick={(e) => {
                         e.stopPropagation();
-                        if (isAvailable) {
-                            onSelect(dateStr);
-                        }
+                        if (isAvailable) onSelect(dateStr);
                     }}
                     disabled={!isAvailable}
                     className={`
@@ -102,36 +108,77 @@ const CyberDatePicker = ({
 
     return (
         <div
-            className="flex flex-col w-64 p-4"
+            className="flex flex-col w-64 p-4 select-none"
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
-                <button onClick={prevMonth} className="p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
+                <button 
+                    onClick={mode === 'days' ? prevMonth : () => {}} 
+                    className={`p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors ${mode === 'years' ? 'opacity-0 pointer-events-none' : ''}`}
+                >
                     <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div className="font-bold text-slate-200 flex items-center gap-1">
-                    <span className="text-white">{MONTH_NAMES[currentMonth]}</span>
-                    <span className="text-slate-500 font-mono">{currentYear}</span>
+                
+                <div 
+                    className="font-bold flex items-center gap-1 cursor-pointer hover:bg-white/5 px-2 py-1 rounded-lg transition-all active:scale-95"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setMode(mode === 'days' ? 'years' : 'days');
+                    }}
+                >
+                    {mode === 'days' ? (
+                        <>
+                            <span className="text-white">{MONTH_NAMES[currentMonth]}</span>
+                            <span className="text-slate-500 font-mono">{currentYear}</span>
+                            <ChevronUp className={`w-3 h-3 text-indigo-400 transition-transform ${mode === 'years' ? 'rotate-180' : ''}`} />
+                        </>
+                    ) : (
+                        <span className="text-indigo-400 text-sm tracking-widest uppercase">Select Year</span>
+                    )}
                 </div>
-                <button onClick={nextMonth} className="p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
+
+                <button 
+                    onClick={mode === 'days' ? nextMonth : () => {}} 
+                    className={`p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors ${mode === 'years' ? 'opacity-0 pointer-events-none' : ''}`}
+                >
                     <ChevronRight className="w-4 h-4" />
                 </button>
             </div>
 
-            {/* Weekdays */}
-            <div className="grid grid-cols-7 mb-2">
-                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
-                    <div key={day} className="h-8 w-8 flex items-center justify-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        {day}
+            {mode === 'days' ? (
+                <>
+                    {/* Weekdays */}
+                    <div className="grid grid-cols-7 mb-2">
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                            <div key={day} className="h-8 w-8 flex items-center justify-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                {day}
+                            </div>
+                        ))}
                     </div>
-                ))}
-            </div>
 
-            {/* Days Grid */}
-            <div className="grid grid-cols-7 gap-y-1">
-                {renderCalendarDays()}
-            </div>
+                    {/* Days Grid */}
+                    <div className="grid grid-cols-7 gap-y-1">
+                        {renderCalendarDays()}
+                    </div>
+                </>
+            ) : (
+                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                    {/* Year Picker View */}
+                    {/* Generate a wide range of years based on availability, plus some buffers */}
+                    {availableYears.map(year => (
+                        <button
+                            key={year}
+                            onClick={() => handleYearSelect(year)}
+                            className={`py-2 rounded-lg text-xs font-mono transition-all ${year === currentYear 
+                                ? 'bg-indigo-600 text-white font-bold' 
+                                : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                        >
+                            {year}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Legend/Footer */}
             <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
@@ -141,7 +188,7 @@ const CyberDatePicker = ({
                         <span>数据可用</span>
                     </div>
                 </div>
-                <button onClick={onClose} className="hover:text-slate-300 transition-colors">Close</button>
+                <button onClick={onClose} className="hover:text-slate-300 transition-colors uppercase tracking-tighter">Close</button>
             </div>
         </div>
     );
