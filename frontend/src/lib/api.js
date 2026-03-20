@@ -9,15 +9,16 @@ const utcToBeijing = (ts) => {
     if (!ts) return ts;
     const hasTime = ts.includes(' ');
     const isoStr = hasTime ? ts.replace(' ', 'T') + 'Z' : ts + 'T00:00:00Z';
-    const d = new Date(isoStr);
-    // 使用 UTC 方法，避免本地时区干扰
-    const utcMs = d.getTime() + 8 * 3600 * 1000;
+    const utcMs = new Date(isoStr).getTime();
+    if (isNaN(utcMs)) return ts; // 无效时间戳，返回原值
+    const bjMs = utcMs + 8 * 3600 * 1000;
     const pad = (n) => String(n).padStart(2, '0');
-    const y = new Date(utcMs).getUTCFullYear();
-    const m = new Date(utcMs).getUTCMonth() + 1;
-    const day = new Date(utcMs).getUTCDate();
-    const h = new Date(utcMs).getUTCHours();
-    const min = new Date(utcMs).getUTCMinutes();
+    const d = new Date(bjMs);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    const h = d.getUTCHours();
+    const min = d.getUTCMinutes();
     const date = `${y}-${pad(m)}-${pad(day)}`;
     if (!hasTime) return date;
     return `${date} ${pad(h)}:${pad(min)}`;
@@ -28,34 +29,17 @@ const convertTimestamps = (data, symbol) => {
     return data.map(item => ({ ...item, timestamp: utcToBeijing(item.timestamp) }));
 };
 
-// dateStr optional: "YYYY-MM-DD"
-// symbol optional: "512890"
-export const getKlines = async (dateStr = '', symbol = '') => {
-    let url = '/klines';
+const fetchKlines = async (endpoint, dateStr, symbol) => {
     const params = [];
     if (dateStr) params.push(`date=${dateStr}`);
     if (symbol) params.push(`symbol=${symbol}`);
-
-    if (params.length > 0) {
-        url += '?' + params.join('&');
-    }
-
+    const url = params.length > 0 ? `${endpoint}?${params.join('&')}` : endpoint;
     const response = await api.get(url);
     return convertTimestamps(response.data.data, symbol);
 };
 
-export const getDailyKlines = async (dateStr = '', symbol = '') => {
-    let url = '/klines/daily';
-    const params = [];
-    if (dateStr) params.push(`date=${dateStr}`);
-    if (symbol) params.push(`symbol=${symbol}`);
-
-    if (params.length > 0) {
-        url += '?' + params.join('&');
-    }
-    const response = await api.get(url);
-    return convertTimestamps(response.data.data, symbol);
-};
+export const getKlines = (dateStr = '', symbol = '') => fetchKlines('/klines', dateStr, symbol);
+export const getDailyKlines = (dateStr = '', symbol = '') => fetchKlines('/klines/daily', dateStr, symbol);
 
 export const getAvailableDates = async (symbol = '') => {
     const url = symbol

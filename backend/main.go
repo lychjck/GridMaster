@@ -57,6 +57,12 @@ func main() {
 	// Auto Migrate
 	DB.AutoMigrate(&Symbol{})
 
+	// Create Indexes
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_1m_symbol_ts ON klines_1m(symbol, timestamp)")
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_5m_symbol_ts ON klines_5m(symbol, timestamp)")
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_daily_symbol_ts ON klines_daily(symbol, timestamp)")
+	log.Println("Database indexes ensured.")
+
 	// Start Background Refresh Tasks
 	go startAStockRefresh()
 	go startBinanceRefresh()
@@ -243,7 +249,7 @@ func main() {
 		// 1. 先探测 5m 表（数据量小，速度快）
 		query5m := DB.Table("klines_5m").Where("symbol = ?", symbol)
 		if dateParam != "" {
-			query5m = query5m.Where("timestamp LIKE ?", dateParam+"%")
+			query5m = query5m.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
 		if err := query5m.Find(&klines5m).Error; err != nil {
 			log.Println("Error fetching 5m:", err)
@@ -258,7 +264,7 @@ func main() {
 		// 3. 5m 有数据，再去尝试加载更高精度的 1m 表
 		query1m := DB.Table("klines_1m").Where("symbol = ?", symbol)
 		if dateParam != "" {
-			query1m = query1m.Where("timestamp LIKE ?", dateParam+"%")
+			query1m = query1m.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
 		if err := query1m.Find(&klines1m).Error; err != nil {
 			log.Println("Error fetching 1m:", err)
@@ -304,7 +310,7 @@ func main() {
 
 		query := DB.Table("klines_daily").Where("symbol = ?", symbol).Order("timestamp asc")
 		if dateParam != "" {
-			query = query.Where("timestamp LIKE ?", dateParam+"%")
+			query = query.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
 
 		if err := query.Find(&dailyKlines).Error; err != nil {

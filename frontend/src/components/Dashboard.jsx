@@ -227,7 +227,12 @@ const Dashboard = () => {
         if (!autoRefreshEnabled || activeTab === 'simulation' || showLiveTrades) return;
 
         // 仅在查看当日数据时自动刷新
-        const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+        // 使用北京时间获取今天的日期字符串
+        const now = new Date();
+        const bjMs = now.getTime() + 8 * 3600 * 1000;
+        const bj = new Date(bjMs);
+        const pad = (n) => String(n).padStart(2, '0');
+        const todayStr = `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`;
         if (selectedDate !== todayStr) return;
 
         const interval = setInterval(backgroundFetchData, 60000); // 60秒轮询，因为后端数据通常是分钟级的
