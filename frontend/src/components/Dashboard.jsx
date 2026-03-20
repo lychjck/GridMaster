@@ -51,6 +51,17 @@ const Dashboard = () => {
     const [usdCnyRate, setUsdCnyRate] = useState(parseFloat(localStorage.getItem('usdCnyRate')) || 7.2);
     const [goldAdjustment, setGoldAdjustment] = useState(parseFloat(localStorage.getItem('goldAdjustment')) || 0);
 
+    // Simulation Params
+    const [simCommissionRate, setSimCommissionRate] = useState(parseFloat(localStorage.getItem('simCommissionRate')) || 0.0001);
+    const [simMinCommission, setSimMinCommission] = useState(parseFloat(localStorage.getItem('simMinCommission')) || 0.1);
+    const [simAmountPerGrid, setSimAmountPerGrid] = useState(parseInt(localStorage.getItem('simAmountPerGrid')) || 100);
+    const [simUsePenetration, setSimUsePenetration] = useState(localStorage.getItem('simUsePenetration') === 'true');
+
+    const now = new Date();
+    const bjMs = now.getTime() + 8 * 3600 * 1000;
+    const bj = new Date(bjMs);
+    const pad = (n) => String(n).padStart(2, '0');
+    const todayStr = `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`;
 
     // Theme Panel
     const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -199,7 +210,7 @@ const Dashboard = () => {
             }
             setPreClose(preCloseVal);
 
-            if (klines.length > 0 && !initialPrice) {
+            if (klines.length > 0) {
                 setInitialPrice(klines[0].open.toFixed(3));
             }
 
@@ -249,6 +260,10 @@ const Dashboard = () => {
     useEffect(() => { localStorage.setItem('showVolumeProfile', showVolumeProfile); }, [showVolumeProfile]);
     useEffect(() => { localStorage.setItem('vpvrColor', vpvrColor); }, [vpvrColor]);
     useEffect(() => { localStorage.setItem('autoRefreshEnabled', autoRefreshEnabled); }, [autoRefreshEnabled]);
+    useEffect(() => { localStorage.setItem('simCommissionRate', simCommissionRate); }, [simCommissionRate]);
+    useEffect(() => { localStorage.setItem('simMinCommission', simMinCommission); }, [simMinCommission]);
+    useEffect(() => { localStorage.setItem('simAmountPerGrid', simAmountPerGrid); }, [simAmountPerGrid]);
+    useEffect(() => { localStorage.setItem('simUsePenetration', simUsePenetration); }, [simUsePenetration]);
 
     // Clear simulation markers IF AND ONLY IF asset or date changes, NOT for every fetch
     useEffect(() => {
@@ -302,11 +317,11 @@ const Dashboard = () => {
                 startDate: selectedDate,
                 basePrice: parseFloat(initialPrice),
                 gridStep: parseFloat(gridStep),
-                gridStepType: gridStepUnit === 'value' ? 'absolute' : 'percent', // Map 'value' to 'absolute' for backend
-                amountPerGrid: 100, // Default or add UI input later
-                commissionRate: 0.0001,
-                minCommission: 0.1,
-                usePenetration: false
+                gridStepType: gridStepUnit === 'value' ? 'absolute' : 'percent',
+                amountPerGrid: simAmountPerGrid,
+                commissionRate: simCommissionRate,
+                minCommission: simMinCommission,
+                usePenetration: simUsePenetration
             };
 
             // 2. Call Backend API
@@ -356,9 +371,13 @@ const Dashboard = () => {
         setIsSyncing(true);
         try {
             await refreshData(selectedSymbol);
+            const dates = await getAvailableDates(selectedSymbol);
+            setAvailableDates(dates);
+            await fetchData(false);
         } catch (e) {
             console.error("Refresh failed", e);
             alert("刷新失败: " + e.message);
+        } finally {
             setIsSyncing(false);
         }
     };
@@ -939,6 +958,59 @@ const Dashboard = () => {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">佣金费率</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.0001"
+                                            value={simCommissionRate}
+                                            onChange={(e) => setSimCommissionRate(parseFloat(e.target.value) || 0)}
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-indigo-500/50 focus:outline-none transition-colors"
+                                        />
+                                        <span className="absolute right-3 top-2.5 text-slate-500 text-xs">万{(simCommissionRate * 10000).toFixed(1)}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">最低佣金</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            value={simMinCommission}
+                                            onChange={(e) => setSimMinCommission(parseFloat(e.target.value) || 0)}
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-indigo-500/50 focus:outline-none transition-colors"
+                                        />
+                                        <span className="absolute right-3 top-2.5 text-slate-500 text-xs">元</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">单笔数量</label>
+                                    <input
+                                        type="number"
+                                        step="100"
+                                        value={simAmountPerGrid}
+                                        onChange={(e) => setSimAmountPerGrid(parseInt(e.target.value) || 100)}
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-indigo-500/50 focus:outline-none transition-colors"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">成交模式</label>
+                                    <select
+                                        value={simUsePenetration ? 'true' : 'false'}
+                                        onChange={(e) => setSimUsePenetration(e.target.value === 'true')}
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none transition-colors"
+                                    >
+                                        <option value="false" className="bg-slate-900">触价即成</option>
+                                        <option value="true" className="bg-slate-900">穿透方成</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             {/* Simulation Actions */}
                             <div className="flex gap-2">
                                 <button
@@ -1025,7 +1097,7 @@ const Dashboard = () => {
                                         onBaselineChange={setInitialPrice}
                                         tradePoints={showLiveTrades ? simulatedTrades : []}
                                         preClose={preClose}
-                                        isLive={selectedDate === new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')}
+                                        isLive={selectedDate === todayStr}
                                         showGridLines={showGridLines}
                                         showVolumeProfile={showVolumeProfile}
                                         vpvrColor={vpvrColor}
