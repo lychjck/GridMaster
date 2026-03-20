@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
@@ -66,6 +67,7 @@ func main() {
 	// Start Background Refresh Tasks
 	go startAStockRefresh()
 	go startBinanceRefresh()
+	go startHKStockRefresh()
 
 	r := gin.Default()
 
@@ -126,27 +128,44 @@ func main() {
 			return
 		}
 
+		symbol := req.Symbol
+		var symbolRecord Symbol
+
 		// Check if already exists
-		var exists Symbol
-		if err := DB.First(&exists, "symbol = ?", req.Symbol).Error; err == nil {
-			c.JSON(http.StatusOK, gin.H{"message": "Symbol already exists", "data": exists})
+		if err := DB.First(&symbolRecord, "symbol = ?", symbol).Error; err == nil {
+			c.JSON(http.StatusOK, gin.H{"message": "Symbol already exists", "data": symbolRecord})
 			return
 		}
 
-		// Trigger Python Script Asynchronously with Real-time Logging
+		symbolUpper := strings.ToUpper(symbol)
+		if symbolUpper == "XAU" {
+			symbolRecord = Symbol{Symbol: symbol, Name: "黄金", Market: 100}
+		} else if strings.HasSuffix(symbolUpper, "USDT") {
+			symbolRecord = Symbol{Symbol: symbol, Name: symbolUpper, Market: 100}
+		} else if isHKSymbol(symbol) {
+			symbolRecord = Symbol{Symbol: symbol, Name: getHKStockName(symbol), Market: 116}
+		} else {
+			symbolRecord = Symbol{Symbol: symbol, Name: symbol, Market: getMarketFromSymbol(symbol)}
+		}
+
+		if err := DB.Create(&symbolRecord).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symbol: " + err.Error()})
+			return
+		}
+
 		go func(s string) {
 			var cmd *exec.Cmd
-			symbolUpper := strings.ToUpper(s)
 			if symbolUpper == "XAU" {
 				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
 			} else if strings.HasSuffix(symbolUpper, "USDT") {
 				cmd = exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", symbolUpper)
+			} else if isHKSymbol(s) {
+				cmd = exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s)
 			} else {
 				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
 			}
 			cmd.Dir = ".."
 
-			// Capture stdout and stderr
 			stdout, _ := cmd.StdoutPipe()
 			cmd.Stderr = cmd.Stdout
 			if err := cmd.Start(); err != nil {
@@ -154,7 +173,6 @@ func main() {
 				return
 			}
 
-			// Stream output line by line
 			scanner := bufio.NewScanner(stdout)
 			for scanner.Scan() {
 				log.Printf("[%s LOG] %s", s, scanner.Text())
@@ -165,9 +183,9 @@ func main() {
 			} else {
 				log.Printf("Successfully completed all tasks for %s", s)
 			}
-		}(req.Symbol)
+		}(symbol)
 
-		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started in background", "symbol": req.Symbol})
+		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started in background", "data": symbolRecord})
 	})
 
 	// POST /api/refresh - Trigger manual data refresh
@@ -186,6 +204,8 @@ func main() {
 				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
 			} else if strings.HasSuffix(symbolUpper, "USDT") {
 				cmd = exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", symbolUpper)
+			} else if isHKSymbol(s) {
+				cmd = exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s)
 			} else {
 				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
 			}
@@ -217,9 +237,13 @@ func main() {
 		symbol := c.Query("symbol")
 		var dates []string
 
-		// 优化方案：直接从日线表获取日期，速度极快
-		// 因为我们同步时保证了 1d, 5m, 1m 数据的一致性
-		query := `SELECT DISTINCT timestamp as date FROM klines_daily`
+		dailyTable := "klines_daily"
+		if symbol != "" && isHKSymbol(symbol) {
+			dailyTable = "hk_klines_daily"
+			symbol = "HK." + symbol
+		}
+
+		query := fmt.Sprintf(`SELECT DISTINCT timestamp as date FROM %s`, dailyTable)
 		var params []interface{}
 
 		if symbol != "" {
@@ -244,10 +268,17 @@ func main() {
 			symbol = "512890"
 		}
 
+		table5m := "klines_5m"
+		table1m := "klines_1m"
+		if isHKSymbol(symbol) {
+			table5m = "hk_klines_5m"
+			table1m = "hk_klines_1m"
+			symbol = "HK." + symbol
+		}
+
 		var klines5m, klines1m []Kline
 
-		// 1. 先探测 5m 表（数据量小，速度快）
-		query5m := DB.Table("klines_5m").Where("symbol = ?", symbol)
+		query5m := DB.Table(table5m).Where("symbol = ?", symbol)
 		if dateParam != "" {
 			query5m = query5m.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
@@ -255,14 +286,12 @@ func main() {
 			log.Println("Error fetching 5m:", err)
 		}
 
-		// 2. 如果 5m 都没有数据，说明这天肯定没拉到，直接返回空，不要去碰巨大的 1m 表
 		if len(klines5m) == 0 {
 			c.JSON(http.StatusOK, gin.H{"data": []Kline{}})
 			return
 		}
 
-		// 3. 5m 有数据，再去尝试加载更高精度的 1m 表
-		query1m := DB.Table("klines_1m").Where("symbol = ?", symbol)
+		query1m := DB.Table(table1m).Where("symbol = ?", symbol)
 		if dateParam != "" {
 			query1m = query1m.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
@@ -270,8 +299,6 @@ func main() {
 			log.Println("Error fetching 1m:", err)
 		}
 
-		// 4. 合并逻辑：如果有 1m 则用 1m，否则降级回 5m
-		// (以下保持原有合并逻辑)...
 		datesWith1m := make(map[string]bool)
 		for _, k := range klines1m {
 			if len(k.Timestamp) >= 10 {
@@ -306,9 +333,15 @@ func main() {
 			symbol = "512890"
 		}
 
+		dailyTable := "klines_daily"
+		if isHKSymbol(symbol) {
+			dailyTable = "hk_klines_daily"
+			symbol = "HK." + symbol
+		}
+
 		var dailyKlines []Kline
 
-		query := DB.Table("klines_daily").Where("symbol = ?", symbol).Order("timestamp asc")
+		query := DB.Table(dailyTable).Where("symbol = ?", symbol).Order("timestamp asc")
 		if dateParam != "" {
 			query = query.Where("timestamp >= ? AND timestamp < ?", dateParam, dateParam+" 24:00")
 		}
@@ -321,6 +354,48 @@ func main() {
 	})
 
 	r.Run(":8080")
+}
+
+func isHKSymbol(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) <= 5
+}
+
+func getHKStockName(symbol string) string {
+	names := map[string]string{
+		"00700": "腾讯控股",
+		"03690": "美团-W",
+		"01810": "小米集团-W",
+		"09988": "阿里巴巴-SW",
+		"09618": "京东集团-SW",
+		"02318": "中国平安",
+		"00941": "中国移动",
+		"00388": "港交所",
+		"01299": "友邦保险",
+		"00005": "汇丰控股",
+	}
+	if name, ok := names[symbol]; ok {
+		return name
+	}
+	return "港股" + symbol
+}
+
+func getMarketFromSymbol(symbol string) int {
+	if len(symbol) == 6 {
+		if symbol[0] == '6' {
+			return 1
+		}
+		return 0
+	}
+	return 1
 }
 
 func isTradingTime() bool {
@@ -356,8 +431,8 @@ func startAStockRefresh() {
 				log.Printf("A-Stock Refresh: Error fetching symbols: %v\n", err)
 			} else {
 				for _, s := range symbols {
-					// 跳过币安和黄金
-					if strings.HasSuffix(strings.ToUpper(s.Symbol), "USDT") || strings.ToUpper(s.Symbol) == "XAU" {
+					// 跳过币安、黄金和港股
+					if strings.HasSuffix(strings.ToUpper(s.Symbol), "USDT") || strings.ToUpper(s.Symbol) == "XAU" || isHKSymbol(s.Symbol) {
 						continue
 					}
 
@@ -375,6 +450,61 @@ func startAStockRefresh() {
 			}
 		} else {
 			log.Println("A-Stock Refresh: Non-trading time, skipping...")
+		}
+
+		time.Sleep(5 * time.Minute)
+	}
+}
+
+func isHKTradingTime() bool {
+	now := time.Now()
+	hour := now.Hour()
+	minute := now.Minute()
+	weekday := now.Weekday()
+
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return false
+	}
+
+	totalMinutes := hour*60 + minute
+	morningStart := 9*60 + 30
+	morningEnd := 12 * 60
+	afternoonStart := 13 * 60
+	afternoonEnd := 16 * 60
+
+	return (totalMinutes >= morningStart && totalMinutes < morningEnd) ||
+		(totalMinutes >= afternoonStart && totalMinutes < afternoonEnd)
+}
+
+func startHKStockRefresh() {
+	log.Println("Starting HK-Stock background refresh task (every 5 min during trading hours)...")
+	for {
+		if isHKTradingTime() {
+			log.Println("HK-Stock Refresh: Trading time, scanning symbols...")
+
+			var symbols []Symbol
+			if err := DB.Find(&symbols).Error; err != nil {
+				log.Printf("HK-Stock Refresh: Error fetching symbols: %v\n", err)
+			} else {
+				for _, s := range symbols {
+					if !isHKSymbol(s.Symbol) {
+						continue
+					}
+
+					log.Printf("HK-Stock Refresh: Updating %s...\n", s.Symbol)
+					cmd := exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s.Symbol)
+					cmd.Dir = ".."
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						log.Printf("HK-Stock Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
+					} else {
+						log.Printf("HK-Stock Refresh: Success for %s", s.Symbol)
+					}
+					time.Sleep(5 * time.Second)
+				}
+			}
+		} else {
+			log.Println("HK-Stock Refresh: Non-trading time, skipping...")
 		}
 
 		time.Sleep(5 * time.Minute)

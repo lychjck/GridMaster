@@ -77,7 +77,7 @@ const Dashboard = () => {
                 const mapped = syms.map(s => ({
                     code: s.symbol,
                     name: s.name,
-                    market: s.market === 1 ? 'SH' : (s.market === 100 ? 'INTL' : 'SZ')
+                    market: s.market === 1 ? 'SH' : (s.market === 116 ? 'HK' : (s.market === 100 ? 'INTL' : 'SZ'))
                 }));
                 if (mapped.length === 0) {
                     setSupportedSymbols([
@@ -105,9 +105,10 @@ const Dashboard = () => {
         const isXAU = symbolUpper === 'XAU';
         const isUSDT = symbolUpper.endsWith('USDT');
         const isSixDigit = /^\d{6}$/.test(newSymbol);
+        const isHKStock = /^\d{1,5}$/.test(newSymbol);
 
-        if (!newSymbol || (!isSixDigit && !isXAU && !isUSDT)) {
-            alert("请输入有效代码（如股票6位数字、XAU 或 BTCUSDT）");
+        if (!newSymbol || (!isSixDigit && !isXAU && !isUSDT && !isHKStock)) {
+            alert("请输入有效代码（A股6位、港股1-5位、XAU 或 BTCUSDT）");
             return;
         }
         setAddingLoading(true);
@@ -465,9 +466,9 @@ const Dashboard = () => {
                             className="flex items-center gap-4 pl-3 pr-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all duration-200 group w-auto md:w-64 justify-between"
                         >
                             <div className="flex items-center gap-3">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentMarket === 'SH' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : (currentMarket === 'INTL' ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]')}`}>
-                                    {currentMarket}
-                                </span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentMarket === 'SH' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : (currentMarket === 'HK' ? 'bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.1)]' : (currentMarket === 'INTL' ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]'))}`}>
+                                        {currentMarket}
+                                    </span>
                                 <div className="flex flex-col items-start gap-0.5 text-left">
                                     <span className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors whitespace-nowrap">{currentSymbolName}</span>
                                     <span className="text-[10px] text-slate-400 font-mono tracking-wider">{selectedSymbol}</span>
@@ -537,7 +538,7 @@ const Dashboard = () => {
                                             <input
                                                 autoFocus
                                                 type="text"
-                                                placeholder="6位代码"
+                                                placeholder="A股6位/港股5位"
                                                 className="flex-1 bg-black/20 border border-indigo-500/50 rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono"
                                                 value={newSymbol}
                                                 onChange={(e) => setNewSymbol(e.target.value)}
