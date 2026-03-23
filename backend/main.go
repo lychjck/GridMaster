@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -145,7 +146,7 @@ func main() {
 		} else if isHKSymbol(symbol) {
 			symbolRecord = Symbol{Symbol: symbol, Name: getHKStockName(symbol), Market: 116}
 		} else {
-			symbolRecord = Symbol{Symbol: symbol, Name: symbol, Market: getMarketFromSymbol(symbol)}
+			symbolRecord = Symbol{Symbol: symbol, Name: getAStockName(symbol), Market: getMarketFromSymbol(symbol)}
 		}
 
 		if err := DB.Create(&symbolRecord).Error; err != nil {
@@ -386,6 +387,31 @@ func getHKStockName(symbol string) string {
 		return name
 	}
 	return "港股" + symbol
+}
+
+func getAStockName(symbol string) string {
+	cmd := exec.Command("uv", "run", "scripts/get_stock_name.py", symbol)
+	cmd.Dir = ".."
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to get stock name for %s: %v", symbol, err)
+		return symbol
+	}
+
+	var result struct {
+		Symbol string `json:"symbol"`
+		Name   string `json:"name"`
+		Market int    `json:"market"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		log.Printf("Failed to parse stock name response for %s: %v", symbol, err)
+		return symbol
+	}
+
+	if result.Name != "" {
+		return result.Name
+	}
+	return symbol
 }
 
 func getMarketFromSymbol(symbol string) int {
