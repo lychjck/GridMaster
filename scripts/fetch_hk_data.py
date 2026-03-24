@@ -42,33 +42,38 @@ TABLE_MAP = {
 
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
 
-    create_sql = """
-        (
-            symbol TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            open REAL NOT NULL,
-            close REAL NOT NULL,
-            high REAL NOT NULL,
-            low REAL NOT NULL,
-            volume INTEGER NOT NULL,
-            amount REAL,
-            amplitude REAL,
-            change_pct REAL,
-            change_amt REAL,
-            turnover REAL,
-            PRIMARY KEY (symbol, timestamp)
-        )
-    """
+        create_sql = """
+            (
+                symbol TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                open REAL NOT NULL,
+                close REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                volume INTEGER NOT NULL,
+                amount REAL,
+                amplitude REAL,
+                change_pct REAL,
+                change_amt REAL,
+                turnover REAL,
+                PRIMARY KEY (symbol, timestamp)
+            )
+        """
 
-    for table_name in TABLE_MAP.values():
-        c.execute(f"CREATE TABLE IF NOT EXISTS {table_name} {create_sql}")
+        for table_name in TABLE_MAP.values():
+            c.execute(f"CREATE TABLE IF NOT EXISTS {table_name} {create_sql}")
 
-    conn.commit()
-    conn.close()
-    print(f"Database initialized at {DB_PATH}")
+        conn.commit()
+        print(f"Database initialized at {DB_PATH}")
+    except Exception as e:
+        print(f"[DB错误] init_db失败: {e}")
+    finally:
+        if conn: conn.close()
 
 
 def fetch_kline(symbol: str, period: str = "5m") -> list[dict]:
@@ -145,38 +150,43 @@ def save_to_db(records: list[dict], table_name: str):
     if not records:
         return
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
 
-    tuples = [
-        (
-            r["symbol"],
-            r["timestamp"],
-            r["open"],
-            r["close"],
-            r["high"],
-            r["low"],
-            r["volume"],
-            r["amount"],
-            r["amplitude"],
-            r["change_pct"],
-            r["change_amt"],
-            r["turnover"],
+        tuples = [
+            (
+                r["symbol"],
+                r["timestamp"],
+                r["open"],
+                r["close"],
+                r["high"],
+                r["low"],
+                r["volume"],
+                r["amount"],
+                r["amplitude"],
+                r["change_pct"],
+                r["change_amt"],
+                r["turnover"],
+            )
+            for r in records
+        ]
+
+        c.executemany(
+            f"""
+            INSERT OR REPLACE INTO {table_name}
+            (symbol, timestamp, open, close, high, low, volume, amount, amplitude, change_pct, change_amt, turnover)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            tuples,
         )
-        for r in records
-    ]
-
-    c.executemany(
-        f"""
-        INSERT OR REPLACE INTO {table_name}
-        (symbol, timestamp, open, close, high, low, volume, amount, amplitude, change_pct, change_amt, turnover)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        tuples,
-    )
-    conn.commit()
-    conn.close()
-    print(f"Saved {len(records)} records to {table_name}")
+        conn.commit()
+        print(f"Saved {len(records)} records to {table_name}")
+    except Exception as e:
+        print(f"[DB错误] save_to_db失败: {e}")
+    finally:
+        if conn: conn.close()
 
 
 def main():

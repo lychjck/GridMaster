@@ -90,20 +90,27 @@ def fetch_data_mootdx(symbol, market, frequency, count=800, since_ts="1970-01-01
         print(f"抓取失败: {e}")
         return []
     finally:
-        try: client.close()
-        except: pass
+        try:
+            client.close()
+        except Exception as e:
+            print(f"  [警告] 关闭client失败: {e}")
 
 def save_to_db(records, table_name):
     if not records: return
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    tuples = [(r["symbol"], r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
-               r["volume"], r["amount"], r["amplitude"], r["change_pct"], 
-               r["change_amt"], r["turnover"], r["f62"], r["f63"], r["f64"]) for r in records]
-    c.executemany(f'INSERT OR REPLACE INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', tuples)
-    conn.commit()
-    conn.close()
-    print(f"  [DB] 成功写入 {len(records)} 条记录到 {table_name}")
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        tuples = [(r["symbol"], r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
+                   r["volume"], r["amount"], r["amplitude"], r["change_pct"], 
+                   r["change_amt"], r["turnover"], r["f62"], r["f63"], r["f64"]) for r in records]
+        c.executemany(f'INSERT OR REPLACE INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', tuples)
+        conn.commit()
+        print(f"  [DB] 成功写入 {len(records)} 条记录到 {table_name}")
+    except Exception as e:
+        print(f"  [DB错误] save_to_db失败: {e}")
+    finally:
+        if conn: conn.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -124,12 +131,16 @@ def main():
         def get_last(table):
             if args.reset:
                 return "1970-01-01 00:00"
+            conn = None
             try:
                 conn = sqlite3.connect(DB_PATH)
                 res = conn.execute(f"SELECT MAX(timestamp) FROM {table} WHERE symbol=?", (symbol,)).fetchone()[0]
-                conn.close()
                 return res if res else "1970-01-01 00:00"
-            except: return "1970-01-01 00:00"
+            except Exception as e:
+                print(f"  [DB错误] get_last失败: {e}")
+                return "1970-01-01 00:00"
+            finally:
+                if conn: conn.close()
 
         # 分周期抓取
         for freq, table in [(9, "klines_daily"), (0, "klines_5m"), (8, "klines_1m")]:

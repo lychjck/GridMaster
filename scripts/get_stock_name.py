@@ -7,16 +7,18 @@ from pathlib import Path
 DB_PATH = (Path(__file__).parent / "../data/market.db").resolve()
 
 def get_name_from_db(symbol):
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM symbols WHERE symbol = ?", (symbol,))
         result = cursor.fetchone()
-        conn.close()
         if result and result[0] and result[0] != symbol:
             return result[0]
-    except:
-        pass
+    except Exception as e:
+        print(f"[DB错误] get_name_from_db失败: {e}", file=sys.stderr)
+    finally:
+        if conn: conn.close()
     return None
 
 def get_name_from_mootdx(symbol):
@@ -47,6 +49,7 @@ def get_name_from_mootdx(symbol):
     return None
 
 def save_to_db(symbol, name):
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -55,9 +58,10 @@ def save_to_db(symbol, name):
             (symbol, name, 0)
         )
         conn.commit()
-        conn.close()
     except Exception as e:
-        print(f"Error saving to db: {e}", file=sys.stderr)
+        print(f"[DB错误] save_to_db失败: {e}", file=sys.stderr)
+    finally:
+        if conn: conn.close()
 
 def get_market_from_symbol(symbol):
     if len(symbol) == 6:

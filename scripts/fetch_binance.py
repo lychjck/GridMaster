@@ -44,12 +44,11 @@ def get_client():
     for url in BASE_URLS:
         try:
             client = Spot(base_url=url, proxies=PROXIES, timeout=10)
-            # 探测逻辑：尝试拉取 1 条 BTC 的 1 分钟 K 线数据，能拉到说明行情接口可用
-            # 不使用 ping() 是因为某些代理 IP 虽然被币安屏蔽了交易，但依然可以看行情
             client.klines(symbol="BTCUSDT", interval="1m", limit=1)
             print(f"  [连接成功] 使用地址: {url}", flush=True)
             return client
-        except:
+        except Exception as e:
+            print(f"  [连接失败] {url}: {e}", flush=True)
             continue
     print("  [警告] 所有官方镜像及代理均不可用，将尝试默认回退。", flush=True)
     return Spot(proxies=PROXIES)
@@ -87,19 +86,22 @@ def get_table_name(interval):
     return 'klines_daily' if interval == '1d' else f"klines_{interval}"
 
 def get_db_bounds(symbol, table_name):
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH, timeout=30)
         c = conn.cursor()
         c.execute(f"SELECT MIN(timestamp), MAX(timestamp) FROM {table_name} WHERE symbol=?", (symbol.upper(),))
         row = c.fetchone()
-        conn.close()
         def to_ms(val):
             if not val: return None
             fmt = '%Y-%m-%d %H:%M' if ' ' in val else '%Y-%m-%d'
             return int(datetime.strptime(val, fmt).replace(tzinfo=timezone.utc).timestamp() * 1000)
         return to_ms(row[0]), to_ms(row[1])
-    except:
+    except Exception as e:
+        print(f"  [DB错误] get_db_bounds失败: {e}", flush=True)
         return None, None
+    finally:
+        if conn: conn.close()
 
 def fetch_batch(client, symbol, interval, end_time=None):
     params = {"symbol": symbol.upper(), "interval": interval, "limit": 1000}
@@ -117,72 +119,83 @@ def sync_symbol_full(symbol, interval):
     table_name = get_table_name(interval)
     print(f"\n>>> 开始全量同步 {symbol} ({interval}) ...", flush=True)
 
-    # 1. 贪婪同步：从“现在”开始往回拉
-    print(f"  [步骤1] 正在同步最新数据并填补缺口...", flush=True)
-    current_end = None
-    fill_count = 0
-    while True:
-        klines = fetch_batch(client, symbol, interval, end_time=current_end)
-        if not klines: break
-        records = []
-        for k in klines:
-            ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
-            ts_str = ts.strftime('%Y-%m-%d %H:%M' if interval != '1d' else '%Y-%m-%d')
-            records.append({
-                "symbol": symbol.upper(), "timestamp": ts_str,
-                "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]),
-                "volume": int(float(k[5])), "amount": float(k[7]),
-                "amplitude": 0.0, "change_pct": 0.0, "change_amt": 0.0, "turnover": 0.0,
-                "f62": 0.0, "f63": 0.0, "f64": 0.0,
-            })
-        save_to_db(records, table_name)
-        fill_count += len(records)
-        oldest_in_batch = klines[0][0]
-        print(f"    进度: [{interval}] 已同步至 {records[0]['timestamp']}", flush=True)
-        _, db_max = get_db_bounds(symbol, table_name)
-        if db_max and oldest_in_batch <= db_max:
-            print(f"    [OK] [{interval}] 已与数据库对接。", flush=True)
-            break
-        current_end = oldest_in_batch - 1
-        time.sleep(0.1)
+    try:
+        # 1. 贪婪同步：从"现在"开始往回拉
+        print(f"  [步骤1] 正在同步最新数据并填补缺口...", flush=True)
+        current_end = None
+        fill_count = 0
+        while True:
+            klines = fetch_batch(client, symbol, interval, end_time=current_end)
+            if not klines: break
+            records = []
+            for k in klines:
+                ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
+                ts_str = ts.strftime('%Y-%m-%d %H:%M' if interval != '1d' else '%Y-%m-%d')
+                records.append({
+                    "symbol": symbol.upper(), "timestamp": ts_str,
+                    "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]),
+                    "volume": int(float(k[5])), "amount": float(k[7]),
+                    "amplitude": 0.0, "change_pct": 0.0, "change_amt": 0.0, "turnover": 0.0,
+                    "f62": 0.0, "f63": 0.0, "f64": 0.0,
+                })
+            save_to_db(records, table_name)
+            fill_count += len(records)
+            oldest_in_batch = klines[0][0]
+            print(f"    进度: [{interval}] 已同步至 {records[0]['timestamp']}", flush=True)
+            _, db_max = get_db_bounds(symbol, table_name)
+            if db_max and oldest_in_batch <= db_max:
+                print(f"    [OK] [{interval}] 已与数据库对接。", flush=True)
+                break
+            current_end = oldest_in_batch - 1
+            time.sleep(0.1)
 
-    # 2. 深度挖掘
-    print(f"  [步骤2] 正在深度回溯 [{interval}] 历史全量数据...", flush=True)
-    db_min, _ = get_db_bounds(symbol, table_name)
-    current_end = (db_min - 1) if db_min else None
-    back_count = 0
-    while True:
-        klines = fetch_batch(client, symbol, interval, end_time=current_end)
-        if not klines or len(klines) == 0: break
-        records = []
-        for k in klines:
-            ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
-            ts_str = ts.strftime('%Y-%m-%d %H:%M' if interval != '1d' else '%Y-%m-%d')
-            records.append({
-                "symbol": symbol.upper(), "timestamp": ts_str,
-                "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]),
-                "volume": int(float(k[5])), "amount": float(k[7]),
-                "amplitude": 0.0, "change_pct": 0.0, "change_amt": 0.0, "turnover": 0.0,
-                "f62": 0.0, "f63": 0.0, "f64": 0.0,
-            })
-        save_to_db(records, table_name)
-        back_count += len(records)
-        current_end = klines[0][0] - 1
-        print(f"    进度: [{interval}] 回溯至 {records[0]['timestamp']} ...", flush=True)
-        if len(klines) < 1000: break
-        time.sleep(0.1)
-    print(f">>> [{interval}] 同步完成！新增: {fill_count + back_count} 条。", flush=True)
+        # 2. 深度挖掘
+        print(f"  [步骤2] 正在深度回溯 [{interval}] 历史全量数据...", flush=True)
+        db_min, _ = get_db_bounds(symbol, table_name)
+        current_end = (db_min - 1) if db_min else None
+        back_count = 0
+        while True:
+            klines = fetch_batch(client, symbol, interval, end_time=current_end)
+            if not klines or len(klines) == 0: break
+            records = []
+            for k in klines:
+                ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
+                ts_str = ts.strftime('%Y-%m-%d %H:%M' if interval != '1d' else '%Y-%m-%d')
+                records.append({
+                    "symbol": symbol.upper(), "timestamp": ts_str,
+                    "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]),
+                    "volume": int(float(k[5])), "amount": float(k[7]),
+                    "amplitude": 0.0, "change_pct": 0.0, "change_amt": 0.0, "turnover": 0.0,
+                    "f62": 0.0, "f63": 0.0, "f64": 0.0,
+                })
+            save_to_db(records, table_name)
+            back_count += len(records)
+            current_end = klines[0][0] - 1
+            print(f"    进度: [{interval}] 回溯至 {records[0]['timestamp']} ...", flush=True)
+            if len(klines) < 1000: break
+            time.sleep(0.1)
+        print(f">>> [{interval}] 同步完成！新增: {fill_count + back_count} 条。", flush=True)
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 def save_to_db(records, table_name):
     if not records: return
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    c = conn.cursor()
-    tuples = [(r["symbol"], r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
-               r["volume"], r["amount"], r["amplitude"], r["change_pct"], 
-               r["change_amt"], r["turnover"], r["f62"], r["f63"], r["f64"]) for r in records]
-    c.executemany(f'INSERT OR REPLACE INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', tuples)
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        c = conn.cursor()
+        tuples = [(r["symbol"], r["timestamp"], r["open"], r["close"], r["high"], r["low"], 
+                   r["volume"], r["amount"], r["amplitude"], r["change_pct"], 
+                   r["change_amt"], r["turnover"], r["f62"], r["f63"], r["f64"]) for r in records]
+        c.executemany(f'INSERT OR REPLACE INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', tuples)
+        conn.commit()
+    except Exception as e:
+        print(f"  [DB错误] save_to_db失败: {e}", flush=True)
+    finally:
+        if conn: conn.close()
 
 def main():
     parser = argparse.ArgumentParser()
