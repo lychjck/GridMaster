@@ -187,7 +187,7 @@ func main() {
 			} else if isHKSymbol(s) {
 				cmd = exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s)
 			} else {
-				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
+				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "999999")
 			}
 			cmd.Dir = ".."
 
@@ -230,7 +230,7 @@ func main() {
 			} else if isHKSymbol(s) {
 				cmd = exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s)
 			} else {
-				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "800")
+				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "999999")
 			}
 			cmd.Dir = ".."
 
@@ -485,7 +485,7 @@ func startAStockRefresh() {
 					}
 
 					log.Printf("A-Stock Refresh: Updating %s...\n", s.Symbol)
-					cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s.Symbol, "--count", "800")
+					cmd := exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s.Symbol, "--count", "999999")
 					cmd.Dir = ".."
 					out, err := cmd.CombinedOutput()
 					if err != nil {
