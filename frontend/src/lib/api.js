@@ -79,4 +79,9 @@ export const refreshData = async (symbol) => {
     return response.data;
 };
 
+export const fullSyncData = async (symbol) => {
+    const response = await api.post('/sync/full', { symbol });
+    return response.data;
+};
+
 export default api;

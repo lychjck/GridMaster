@@ -109,16 +109,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--count", type=int, default=800)
+    parser.add_argument("--reset", action="store_true", help="Ignore existing data, fetch from scratch")
     args = parser.parse_args()
 
     for symbol in args.symbols.split(","):
         symbol = symbol.strip()
         print(f"\n{'='*60}")
         print(f"正在处理 A股: {symbol}")
+        if args.reset:
+            print(f"  [RESET] 全量重拉模式")
         print(f"{'='*60}")
         
         # 获取各周期的最新时间戳
         def get_last(table):
+            if args.reset:
+                return "1970-01-01 00:00"
             try:
                 conn = sqlite3.connect(DB_PATH)
                 res = conn.execute(f"SELECT MAX(timestamp) FROM {table} WHERE symbol=?", (symbol,)).fetchone()[0]

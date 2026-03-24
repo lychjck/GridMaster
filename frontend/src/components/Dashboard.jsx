@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import VolatilityChart from './VolatilityChart';
-import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, deleteSymbol, runSimulation, refreshData } from '../lib/api';
-import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette } from 'lucide-react';
+import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, deleteSymbol, runSimulation, refreshData, fullSyncData } from '../lib/api';
+import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette, Download } from 'lucide-react';
 import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
 import DailyKChart from './DailyKChart';
@@ -383,6 +383,21 @@ const Dashboard = () => {
         }
     };
 
+    const handleFullSync = async () => {
+        if (!window.confirm(`确定要全量同步 ${selectedSymbol} 的数据吗？这可能需要几分钟。`)) {
+            return;
+        }
+        setIsSyncing(true);
+        try {
+            await fullSyncData(selectedSymbol);
+            alert("全量同步已启动，数据将在后台拉取完成。");
+        } catch (e) {
+            console.error("Full sync failed", e);
+            alert("全量同步失败: " + e.message);
+            setIsSyncing(false);
+        }
+    };
+
     // New: Polling Effect for Auto-Sync
     useEffect(() => {
         if (!isSyncing) return;
@@ -733,6 +748,15 @@ const Dashboard = () => {
                     >
                         <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
                     </button>
+
+                    <button
+                        onClick={handleFullSync}
+                        className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-amber-400 hover:text-amber-300 transition-all active:scale-95 duration-200 group relative overflow-hidden"
+                        title="全量同步（重新拉取所有历史数据）"
+                        disabled={loading}
+                    >
+                        <Download className="w-5 h-5 group-hover:translate-y-0.5 transition-transform duration-300" />
+                    </button>
                 </div>
             </header>
 
@@ -746,25 +770,25 @@ const Dashboard = () => {
                                 <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-300/80">Time Machine</h2>
                             </div>
 
-                            <div className="flex items-center gap-2 relative">
+                            <div className="flex items-center gap-1.5 relative">
                                 <button
                                     onClick={() => {
                                         const idx = availableDates.indexOf(selectedDate);
                                         if (idx > 0) setSelectedDate(availableDates[idx - 1]);
                                     }}
                                     disabled={!availableDates.length || availableDates.indexOf(selectedDate) <= 0}
-                                    className="p-3 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                    className="p-2.5 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </button>
 
-                                <div className="relative flex-1">
+                                <div className="relative flex-1 min-w-0">
                                     <button
                                         onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-4 py-3 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl px-3 py-2.5 text-sm transition-all text-slate-200 group focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
                                     >
-                                        <span className="font-mono">{selectedDate || 'Select Date'}</span>
-                                        <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                                        <span className="font-mono truncate">{selectedDate || 'Select Date'}</span>
+                                        <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-transform duration-300 flex-shrink-0 ${isDatePickerOpen ? 'rotate-180' : ''}`} />
                                     </button>
 
                                     {isDatePickerOpen && (
@@ -791,9 +815,18 @@ const Dashboard = () => {
                                         if (idx >= 0 && idx < availableDates.length - 1) setSelectedDate(availableDates[idx + 1]);
                                     }}
                                     disabled={!availableDates.length || availableDates.indexOf(selectedDate) === -1 || availableDates.indexOf(selectedDate) >= availableDates.length - 1}
-                                    className="p-3 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                    className="p-2.5 bg-black/20 hover:bg-black/30 border border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 transition-all disabled:opacity-30 disabled:pointer-events-none"
                                 >
                                     <ChevronRight className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                    onClick={() => setSelectedDate(todayStr)}
+                                    disabled={!availableDates.includes(todayStr)}
+                                    className="p-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 hover:border-indigo-500/50 rounded-xl text-indigo-400 hover:text-indigo-300 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                    title="返回今天"
+                                >
+                                    <Calendar className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
