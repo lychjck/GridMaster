@@ -256,24 +256,88 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": "Refresh started in background", "symbol": req.Symbol})
 	})
 
+	r.POST("/api/sync/full", func(c *gin.Context) {
+		var req AddSymbolRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		var symbolRecord Symbol
+		if err := DB.First(&symbolRecord, "symbol = ?", req.Symbol).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Symbol not found"})
+			return
+		}
+
+		c.JSON(http.StatusAccepted, gin.H{"message": "Full sync started in background", "symbol": req.Symbol})
+
+		go func(s string) {
+			var cmd *exec.Cmd
+			symbolUpper := strings.ToUpper(s)
+			if symbolUpper == "XAU" {
+				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
+			} else if strings.HasSuffix(symbolUpper, "USDT") {
+				cmd = exec.Command("uv", "run", "scripts/fetch_binance.py", "--symbols", symbolUpper)
+			} else if isHKSymbol(s) {
+				cmd = exec.Command("uv", "run", "scripts/fetch_hk_data.py", "--symbol", s)
+			} else {
+				cmd = exec.Command("uv", "run", "scripts/fetch_data_mootdx.py", "--symbols", s, "--count", "999999", "--reset")
+			}
+			cmd.Dir = ".."
+
+			stdout, _ := cmd.StdoutPipe()
+			cmd.Stderr = cmd.Stdout
+			if err := cmd.Start(); err != nil {
+				log.Printf("Failed to start full sync for %s: %v", s, err)
+				return
+			}
+
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				log.Printf("[%s FULL-SYNC] %s", s, scanner.Text())
+			}
+
+			if err := cmd.Wait(); err != nil {
+				log.Printf("Full sync finished with error for %s: %v", s, err)
+			} else {
+				log.Printf("Successfully completed full sync for %s", s)
+			}
+		}(req.Symbol)
+	})
+
 	r.GET("/api/dates", func(c *gin.Context) {
 		symbol := c.Query("symbol")
 		var dates []string
 
-		dailyTable := "klines_daily"
+		table1m := "klines_1m"
+		table5m := "klines_5m"
 		if symbol != "" && isHKSymbol(symbol) {
-			dailyTable = "hk_klines_daily"
+			table1m = "hk_klines_1m"
+			table5m = "hk_klines_5m"
 			symbol = "HK." + symbol
 		}
 
-		query := fmt.Sprintf(`SELECT DISTINCT timestamp as date FROM %s`, dailyTable)
+		var query string
 		var params []interface{}
 
 		if symbol != "" {
-			query += ` WHERE symbol = ?`
-			params = append(params, symbol)
+			query = fmt.Sprintf(`
+				SELECT DISTINCT date FROM (
+					SELECT substr(timestamp, 1, 10) as date FROM %s WHERE symbol = ?
+					UNION
+					SELECT substr(timestamp, 1, 10) as date FROM %s WHERE symbol = ?
+				) ORDER BY date ASC
+			`, table1m, table5m)
+			params = []interface{}{symbol, symbol}
+		} else {
+			query = fmt.Sprintf(`
+				SELECT DISTINCT date FROM (
+					SELECT substr(timestamp, 1, 10) as date FROM %s
+					UNION
+					SELECT substr(timestamp, 1, 10) as date FROM %s
+				) ORDER BY date ASC
+			`, table1m, table5m)
 		}
-		query += ` ORDER BY date ASC`
 
 		err := DB.Raw(query, params...).Scan(&dates).Error
 
