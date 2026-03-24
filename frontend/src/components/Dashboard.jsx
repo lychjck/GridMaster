@@ -389,27 +389,32 @@ const Dashboard = () => {
 
         console.log("Auto-sync active: Polling for data...");
         
-        // Poll every 5 seconds
+        let previousDateCount = availableDates.length;
+        
         const pollInterval = setInterval(async () => {
             try {
                 const dates = await getAvailableDates(selectedSymbol);
-                // If we got new dates, or current date has more data
-                setAvailableDates(prev => {
-                    if (dates.length > prev.length) {
-                        console.log("New data detected via auto-sync.");
-                        return dates;
-                    }
-                    return prev;
-                });
                 
-                // Silent refresh of current chart data
-                fetchData(true);
+                if (dates.length > 0 && dates.length !== previousDateCount) {
+                    console.log(`New data detected: ${dates.length} dates (was ${previousDateCount})`);
+                    setAvailableDates(dates);
+                    previousDateCount = dates.length;
+                    
+                    const latestDate = dates[dates.length - 1];
+                    if (!selectedDate || dates.length > availableDates.length) {
+                        setSelectedDate(latestDate);
+                    }
+                    
+                    if (dates.length > 0) {
+                        setIsSyncing(false);
+                        console.log("Auto-sync completed: data ready.");
+                    }
+                }
             } catch (e) {
                 console.error("Polling failed", e);
             }
         }, 5000);
 
-        // Stop polling after 5 minutes
         const stopPolling = setTimeout(() => {
             setIsSyncing(false);
             clearInterval(pollInterval);

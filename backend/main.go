@@ -139,22 +139,46 @@ func main() {
 		}
 
 		symbolUpper := strings.ToUpper(symbol)
+		var market int
 		if symbolUpper == "XAU" {
-			symbolRecord = Symbol{Symbol: symbol, Name: "黄金", Market: 100}
+			market = 100
 		} else if strings.HasSuffix(symbolUpper, "USDT") {
-			symbolRecord = Symbol{Symbol: symbol, Name: symbolUpper, Market: 100}
+			market = 100
 		} else if isHKSymbol(symbol) {
-			symbolRecord = Symbol{Symbol: symbol, Name: getHKStockName(symbol), Market: 116}
+			market = 116
 		} else {
-			symbolRecord = Symbol{Symbol: symbol, Name: getAStockName(symbol), Market: getMarketFromSymbol(symbol)}
+			market = getMarketFromSymbol(symbol)
 		}
+
+		symbolRecord = Symbol{Symbol: symbol, Name: symbol, Market: market}
 
 		if err := DB.Create(&symbolRecord).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symbol: " + err.Error()})
 			return
 		}
 
+		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started in background", "data": symbolRecord})
+
 		go func(s string) {
+			var realName string
+			if symbolUpper == "XAU" {
+				realName = "黄金"
+			} else if strings.HasSuffix(symbolUpper, "USDT") {
+				realName = symbolUpper
+			} else if isHKSymbol(s) {
+				realName = getHKStockName(s)
+			} else {
+				realName = getAStockName(s)
+			}
+
+			if realName != s && realName != "" {
+				if err := DB.Model(&Symbol{}).Where("symbol = ?", s).Update("name", realName).Error; err != nil {
+					log.Printf("Failed to update name for %s: %v", s, err)
+				} else {
+					log.Printf("Updated name for %s: %s", s, realName)
+				}
+			}
+
 			var cmd *exec.Cmd
 			if symbolUpper == "XAU" {
 				cmd = exec.Command("uv", "run", "scripts/fetch_gold_sina.py")
@@ -185,8 +209,6 @@ func main() {
 				log.Printf("Successfully completed all tasks for %s", s)
 			}
 		}(symbol)
-
-		c.JSON(http.StatusAccepted, gin.H{"message": "Data fetch started in background", "data": symbolRecord})
 	})
 
 	// POST /api/refresh - Trigger manual data refresh
