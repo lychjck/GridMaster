@@ -38,7 +38,15 @@ const fetchKlines = async (endpoint, dateStr, symbol) => {
     return convertTimestamps(response.data.data, symbol);
 };
 
-export const getKlines = (dateStr = '', symbol = '') => fetchKlines('/klines', dateStr, symbol);
+export const getKlines = async (dateStr = '', symbol = '') => {
+    const params = [];
+    if (dateStr) params.push(`date=${dateStr}`);
+    if (symbol) params.push(`symbol=${symbol}`);
+    const url = params.length > 0 ? `/klines?${params.join('&')}` : '/klines';
+    const response = await api.get(url);
+    const data = convertTimestamps(response.data.data, symbol);
+    return { data, preClose: response.data.pre_close ?? null };
+};
 export const getDailyKlines = (dateStr = '', symbol = '') => fetchKlines('/klines/daily', dateStr, symbol);
 
 export const getAvailableDates = async (symbol = '') => {

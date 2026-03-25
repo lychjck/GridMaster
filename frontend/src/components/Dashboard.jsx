@@ -207,47 +207,27 @@ const Dashboard = () => {
         if (!selectedDate) return;
         if (!isSilent) setLoading(true);
         try {
-            const [klines, dailies] = await Promise.all([
+            const [klinesResult, dailies] = await Promise.all([
                 getKlines(selectedDate, selectedSymbol),
                 getDailyKlines(selectedDate, selectedSymbol)
             ]);
 
+            const klines = klinesResult.data;
             setData(klines);
             setCurrentDayInfo(dailies.length > 0 ? dailies[0] : null);
-
-            // Fetch Pre-Close (Yesterday's Close)
-            let preCloseVal = null;
-            if (availableDates.length > 0) {
-                const idx = availableDates.indexOf(selectedDate);
-                if (idx > 0) {
-                    const prevDate = availableDates[idx - 1];
-                    try {
-                        const prevDailies = await getDailyKlines(prevDate, selectedSymbol);
-                        if (prevDailies.length > 0) {
-                            preCloseVal = prevDailies[0].close;
-                        }
-                    } catch (e) {
-                        console.error("Failed to fetch pre-close", e);
-                    }
-                } else if (dailies.length > 0 && dailies[0].pre_close) {
-                    // Fallback to pre_close field from current day record if provided by backend
-                    preCloseVal = dailies[0].pre_close;
-                }
-            }
-            setPreClose(preCloseVal);
+            setPreClose(klinesResult.preClose);
 
             if (klines.length > 0) {
                 setInitialPrice(klines[0].open.toFixed(3));
             }
 
             calculateStats(klines);
-            // Don't clear trades automatically here, let the [selectedSymbol] effect handle it
         } catch (err) {
             console.error("Fetch failed", err);
         } finally {
             if (!isSilent) setLoading(false);
         }
-    }, [selectedDate, selectedSymbol, availableDates, calculateStats]);
+    }, [selectedDate, selectedSymbol, calculateStats]);
 
     useEffect(() => {
         fetchData(false);

@@ -424,7 +424,24 @@ func main() {
 			return finalData[i].Timestamp < finalData[j].Timestamp
 		})
 
-		c.JSON(http.StatusOK, gin.H{"data": finalData})
+		// 查询昨收价
+		var preClose *float64
+		if dateParam != "" {
+			dailyTable := "klines_daily"
+			if isHKSymbol(c.Query("symbol")) {
+				dailyTable = "hk_klines_daily"
+			}
+			var prevKline Kline
+			if err := DB.Table(dailyTable).Where("symbol = ? AND timestamp < ?", symbol, dateParam).Order("timestamp desc").First(&prevKline).Error; err == nil {
+				preClose = &prevKline.Close
+			}
+		}
+
+		resp := gin.H{"data": finalData}
+		if preClose != nil {
+			resp["pre_close"] = *preClose
+		}
+		c.JSON(http.StatusOK, resp)
 	})
 
 	r.GET("/api/klines/daily", func(c *gin.Context) {
