@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, deleteSymbol, runSimulation, refreshData, fullSyncData } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette, Download } from 'lucide-react';
@@ -6,6 +6,7 @@ import SimulationPanel from './SimulationPanel';
 import CyberDatePicker from './CyberDatePicker';
 import DailyKChart from './DailyKChart';
 import { useTheme, THEMES } from '../lib/ThemeContext.jsx';
+import { useMarketSocket } from '../lib/useMarketSocket';
 
 const Dashboard = () => {
     // === Domain State ===
@@ -233,23 +234,21 @@ const Dashboard = () => {
         await fetchData(true);
     };
 
-    // 自动刷新机制：仅在未进行模拟且查看当日图表时运行
-    useEffect(() => {
-        // 如果自动刷新被禁用，或者处于网格回测标签页，或者图表上正在显示回测点位，则不要刷新
-        if (!autoRefreshEnabled || activeTab === 'simulation' || showLiveTrades) return;
+    // WebSocket 实时推送：替代60秒轮询
+    // wsActive 条件与原 setInterval 逻辑一致：今日数据 + 非回测tab + 未展示实时成交
+    const wsActive =
+        autoRefreshEnabled &&
+        !!selectedSymbol &&
+        selectedDate === todayStr &&
+        activeTab !== 'simulation' &&
+        !showLiveTrades;
 
-        // 仅在查看当日数据时自动刷新
-        // 使用北京时间获取今天的日期字符串
-        const now = new Date();
-        const bjMs = now.getTime() + 8 * 3600 * 1000;
-        const bj = new Date(bjMs);
-        const pad = (n) => String(n).padStart(2, '0');
-        const todayStr = `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`;
-        if (selectedDate !== todayStr) return;
+    // onUpdate 用 useCallback 包裹，确保引用稳定，避免 socket 频繁重连
+    const handleWsUpdate = useCallback(() => {
+        backgroundFetchData();
+    }, [backgroundFetchData]);
 
-        const interval = setInterval(backgroundFetchData, 60000); // 60秒轮询，因为后端数据通常是分钟级的
-        return () => clearInterval(interval);
-    }, [selectedDate, selectedSymbol, availableDates, activeTab, showLiveTrades, autoRefreshEnabled]);
+    useMarketSocket(selectedSymbol, handleWsUpdate, wsActive);
 
     // Sync state to localStorage
     useEffect(() => { localStorage.setItem('selectedSymbol', selectedSymbol); }, [selectedSymbol]);
