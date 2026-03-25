@@ -14,11 +14,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite" // Pure Go SQLite driver
+	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
 // Kline matches the schema in data/market.db
 var DB *gorm.DB
+
+var hub *Hub
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // 开发阶段允许所有来源
+	},
+}
 
 type Kline struct {
 	Symbol    string  `gorm:"primaryKey" json:"symbol"`
@@ -64,6 +73,11 @@ func main() {
 	DB.Exec("CREATE INDEX IF NOT EXISTS idx_5m_symbol_ts ON klines_5m(symbol, timestamp)")
 	DB.Exec("CREATE INDEX IF NOT EXISTS idx_daily_symbol_ts ON klines_daily(symbol, timestamp)")
 	log.Println("Database indexes ensured.")
+
+	// Start WebSocket Hub（必须在 refresh goroutine 之前初始化，确保 hub != nil）
+	hub = newHub()
+	log.Println("Starting WebSocket Hub")
+	go hub.Run()
 
 	// Start Background Refresh Tasks
 	go startAStockRefresh()
@@ -440,6 +454,19 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"data": dailyKlines})
 	})
 
+	// GET /api/ws - WebSocket 实时推送端点
+	r.GET("/api/ws", func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Printf("WS upgrade error: %v", err)
+			return
+		}
+		client := &Client{conn: conn, send: make(chan []byte, 64)}
+		hub.register <- client
+		go client.writePump()      // writePump 不再接受 hub 参数，由 send channel 关闭驱动退出
+		go client.readPump(hub)    // readPump 负责 unregister
+	})
+
 	r.Run(":8080")
 }
 
@@ -533,7 +560,7 @@ func isTradingTime() bool {
 }
 
 func startAStockRefresh() {
-	log.Println("Starting A-Stock background refresh task (every 5 min during trading hours)...")
+	log.Println("Starting A-Stock background refresh task (every 1 min during trading hours)...")
 	for {
 		if isTradingTime() {
 			log.Println("A-Stock Refresh: Trading time, scanning symbols...")
@@ -556,6 +583,14 @@ func startAStockRefresh() {
 						log.Printf("A-Stock Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
 					} else {
 						log.Printf("A-Stock Refresh: Success for %s", s.Symbol)
+						if hub != nil {
+							msg, _ := json.Marshal(map[string]string{
+								"type":      "kline_updated",
+								"symbol":    s.Symbol,
+								"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+							})
+							hub.Broadcast(msg)
+						}
 					}
 					time.Sleep(5 * time.Second)
 				}
@@ -564,7 +599,7 @@ func startAStockRefresh() {
 			log.Println("A-Stock Refresh: Non-trading time, skipping...")
 		}
 
-		time.Sleep(5 * time.Minute)
+		time.Sleep(1 * time.Minute)
 	}
 }
 
@@ -589,7 +624,7 @@ func isHKTradingTime() bool {
 }
 
 func startHKStockRefresh() {
-	log.Println("Starting HK-Stock background refresh task (every 5 min during trading hours)...")
+	log.Println("Starting HK-Stock background refresh task (every 1 min during trading hours)...")
 	for {
 		if isHKTradingTime() {
 			log.Println("HK-Stock Refresh: Trading time, scanning symbols...")
@@ -611,6 +646,14 @@ func startHKStockRefresh() {
 						log.Printf("HK-Stock Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
 					} else {
 						log.Printf("HK-Stock Refresh: Success for %s", s.Symbol)
+						if hub != nil {
+							msg, _ := json.Marshal(map[string]string{
+								"type":      "kline_updated",
+								"symbol":    s.Symbol,
+								"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+							})
+							hub.Broadcast(msg)
+						}
 					}
 					time.Sleep(5 * time.Second)
 				}
@@ -619,7 +662,7 @@ func startHKStockRefresh() {
 			log.Println("HK-Stock Refresh: Non-trading time, skipping...")
 		}
 
-		time.Sleep(5 * time.Minute)
+		time.Sleep(1 * time.Minute)
 	}
 }
 
