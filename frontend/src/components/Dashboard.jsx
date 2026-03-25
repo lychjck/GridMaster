@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import VolatilityChart from './VolatilityChart';
 import { getKlines, getDailyKlines, getAvailableDates, getSymbols, addSymbol, deleteSymbol, runSimulation, refreshData, fullSyncData } from '../lib/api';
 import { Settings, RefreshCw, TrendingUp, DollarSign, Plus, Loader2, Search, ChevronDown, ChevronLeft, ChevronRight, Check, X, BarChart3, LineChart, MoveHorizontal, Play, Trash2, Calendar, Palette, Download } from 'lucide-react';
@@ -14,7 +14,15 @@ const Dashboard = () => {
     const [currentDayInfo, setCurrentDayInfo] = useState(null);
     const [loading, setLoading] = useState(false);
     const [availableDates, setAvailableDates] = useState([]);
-    const [selectedDate, setSelectedDate] = useState(localStorage.getItem('selectedDate') || '');
+    const todayStr = useMemo(() => {
+        const now = new Date();
+        const bjMs = now.getTime() + 8 * 3600 * 1000;
+        const bj = new Date(bjMs);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`;
+    }, []);
+
+    const [selectedDate, setSelectedDate] = useState(localStorage.getItem('selectedDate') || todayStr);
 
     // Symbol & Asset State
     const [selectedSymbol, setSelectedSymbol] = useState(localStorage.getItem('selectedSymbol') || '512890');
@@ -57,12 +65,6 @@ const Dashboard = () => {
     const [simMinCommission, setSimMinCommission] = useState(parseFloat(localStorage.getItem('simMinCommission')) || 0.1);
     const [simAmountPerGrid, setSimAmountPerGrid] = useState(parseInt(localStorage.getItem('simAmountPerGrid')) || 100);
     const [simUsePenetration, setSimUsePenetration] = useState(localStorage.getItem('simUsePenetration') === 'true');
-
-    const now = new Date();
-    const bjMs = now.getTime() + 8 * 3600 * 1000;
-    const bj = new Date(bjMs);
-    const pad = (n) => String(n).padStart(2, '0');
-    const todayStr = `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`;
 
     // Theme Panel
     const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -178,8 +180,30 @@ const Dashboard = () => {
         localStorage.setItem('goldAdjustment', goldAdjustment);
     }, [goldAdjustment]);
 
+    const calculateStats = useCallback((klines) => {
+        if (!klines || klines.length === 0) return;
+        const highs = klines.map(k => k.high);
+        const lows = klines.map(k => k.low);
+        let max = Math.max(...highs);
+        let min = Math.min(...lows);
+        const range = ((max - min) / min) * 100;
+        let spread = max - min;
+
+        // Unit conversion for Gold stats display
+        if (selectedSymbol === 'XAU' && goldPriceUnit === 'RMB/g') {
+            const factor = (parseFloat(usdCnyRate) || 7.2) / 31.1035;
+            spread = spread * factor + (parseFloat(goldAdjustment) || 0);
+        }
+
+        setStats({
+            range: range.toFixed(2),
+            volatility: (range / 4).toFixed(2),
+            spread: spread.toFixed(3)
+        });
+    }, [selectedSymbol, goldPriceUnit, usdCnyRate, goldAdjustment]);
+
     // 2. Fetch Detailed Klines & Daily Info when Date Selected
-    const fetchData = async (isSilent = false) => {
+    const fetchData = useCallback(async (isSilent = false) => {
         if (!selectedDate) return;
         if (!isSilent) setLoading(true);
         try {
@@ -223,16 +247,16 @@ const Dashboard = () => {
         } finally {
             if (!isSilent) setLoading(false);
         }
-    };
+    }, [selectedDate, selectedSymbol, availableDates, calculateStats]);
 
     useEffect(() => {
         fetchData(false);
     }, [selectedDate, selectedSymbol]);
 
     // 3. Background Fetch for Auto Refresh (Silent, no loading indicator)
-    const backgroundFetchData = async () => {
+    const backgroundFetchData = useCallback(async () => {
         await fetchData(true);
-    };
+    }, [fetchData]);
 
     // WebSocket 实时推送：替代60秒轮询
     // wsActive 条件与原 setInterval 逻辑一致：今日数据 + 非回测tab + 未展示实时成交
@@ -283,28 +307,6 @@ const Dashboard = () => {
             calculateStats(data);
         }
     }, [data]);
-
-    const calculateStats = (klines) => {
-        if (!klines || klines.length === 0) return;
-        const highs = klines.map(k => k.high);
-        const lows = klines.map(k => k.low);
-        let max = Math.max(...highs);
-        let min = Math.min(...lows);
-        const range = ((max - min) / min) * 100;
-        let spread = max - min;
-
-        // Unit conversion for Gold stats display
-        if (selectedSymbol === 'XAU' && goldPriceUnit === 'RMB/g') {
-            const factor = (parseFloat(usdCnyRate) || 7.2) / 31.1035;
-            spread = spread * factor + (parseFloat(goldAdjustment) || 0);
-        }
-
-        setStats({
-            range: range.toFixed(2),
-            volatility: (range / 4).toFixed(2),
-            spread: spread.toFixed(3)
-        });
-    };
 
     const handleRunSimulation = async () => {
         if (!data || data.length === 0 || !initialPrice || !gridStep) return;
