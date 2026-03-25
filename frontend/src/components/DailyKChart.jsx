@@ -25,8 +25,23 @@ const DailyKChart = ({ symbol, startDate }) => {
     const [customDays, setCustomDays] = useState('');
     const [customReturn, setCustomReturn] = useState(null);
 
-    // When data loads, potentially apply initial zoom if not '全部', 
-    // but we default to '全部' (0) here, so option natively uses it.
+    // Fixed return stats: 7-day and 1-month
+    const calcReturn = (days) => {
+        if (!data || data.length === 0) return null;
+        const latestIdx = data.length - 1;
+        const pastIdx = latestIdx - days;
+        if (pastIdx < 0) return null;
+        const ret = ((data[latestIdx].close - data[pastIdx].close) / data[pastIdx].close) * 100;
+        return ret;
+    };
+
+    const FIXED_RETURNS = [
+        { label: '7天',  days: 5   },  // 5 trading days ≈ 1 week
+        { label: '1月',  days: 22  },  // 22 trading days ≈ 1 month
+        { label: '3月',  days: 66  },  // 66 trading days ≈ 3 months
+        { label: '7月',  days: 154 },  // 154 trading days ≈ 7 months
+        { label: '1年',  days: 252 },  // 252 trading days ≈ 1 year
+    ].map(item => ({ ...item, value: calcReturn(item.days) }));
 
     // Effect for calculating custom N-days return
     useEffect(() => {
@@ -337,8 +352,20 @@ const DailyKChart = ({ symbol, startDate }) => {
                     ))}
                 </div>
 
-                {/* Custom Days Return Calculator */}
+                {/* Fixed Return Stats */}
                 <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
+                    {FIXED_RETURNS.map(({ label, value }) => (
+                        <div key={label} className="flex items-center gap-1.5 bg-black/20 border border-white/5 rounded-md px-2.5 py-1">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">{label}</span>
+                            <span className={`text-xs font-bold ${value === null ? 'text-slate-600' : value >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                {value === null ? '--' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Custom Days Return Calculator */}
+                <div className="flex items-center gap-2 ml-2 border-l border-white/10 pl-4">
                     <span className="text-xs font-medium text-slate-400">近</span>
                     <input
                         type="number"

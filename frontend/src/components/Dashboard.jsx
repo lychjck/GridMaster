@@ -1085,20 +1085,28 @@ const Dashboard = () => {
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
+                                    <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">今日涨幅 Change</p>
+                                    {(() => {
+                                        const lastPrice = data?.length > 0 ? data[data.length - 1].close : null;
+                                        const pct = lastPrice && preClose ? ((lastPrice - preClose) / preClose * 100) : null;
+                                        return (
+                                            <p className={`text-lg font-bold font-mono group-hover:text-glow transition-all ${pct != null ? (pct >= 0 ? 'text-rose-400' : 'text-emerald-400') : 'text-slate-500'}`}>
+                                                {pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '--'}
+                                            </p>
+                                        );
+                                    })()}
+                                </div>
+                                <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
                                     <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">振幅 Range</p>
                                     <p className="text-lg font-bold font-mono text-white group-hover:text-glow transition-all">{stats.range}%</p>
                                 </div>
-                                <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
-                                    <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">波动 Volatility</p>
-                                    <p className="text-lg font-bold font-mono text-white group-hover:text-glow transition-all">{stats.volatility}</p>
-                                </div>
                             </div>
-                            <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex items-center justify-between">
-                                <div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
                                     <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">日内价差 Spread</p>
                                     <p className="text-lg font-bold font-mono text-emerald-300 group-hover:text-glow transition-all">{stats.spread}</p>
                                 </div>
-                                <div className="text-right">
+                                <div className="group bg-white/5 hover:bg-white/[0.08] p-3 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300">
                                     <p className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider">模拟网格成交</p>
                                     <p className="text-lg font-bold font-mono text-indigo-300 group-hover:text-glow transition-all">{simulatedTrades.length} <span className="text-xs text-slate-500 font-normal">笔</span></p>
                                 </div>

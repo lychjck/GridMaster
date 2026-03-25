@@ -456,11 +456,17 @@ func main() {
 
 	// GET /api/ws - WebSocket 实时推送端点
 	r.GET("/api/ws", func(c *gin.Context) {
+		log.Printf("WS: Received WebSocket upgrade request from %s", c.Request.RemoteAddr)
+		log.Printf("WS: Request headers: %v", c.Request.Header)
+
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("WS upgrade error: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "WebSocket upgrade failed"})
 			return
 		}
+
+		log.Printf("WS: Successfully upgraded connection from %s", c.Request.RemoteAddr)
 		client := &Client{conn: conn, send: make(chan []byte, 64)}
 		hub.register <- client
 		go client.writePump()      // writePump 不再接受 hub 参数，由 send channel 关闭驱动退出
@@ -686,6 +692,14 @@ func startBinanceRefresh() {
 					log.Printf("Binance Refresh: Error for %s: %v\nOutput: %s", s.Symbol, err, string(out))
 				} else {
 					log.Printf("Binance Refresh: Success for %s", s.Symbol)
+					if hub != nil {
+						msg, _ := json.Marshal(map[string]string{
+							"type":      "kline_updated",
+							"symbol":    s.Symbol,
+							"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+						})
+						hub.Broadcast(msg)
+					}
 				}
 				time.Sleep(2 * time.Second)
 			}
