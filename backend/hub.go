@@ -60,6 +60,9 @@ func (h *Hub) Run() {
 				delete(h.clients, client)
 				close(client.send)
 			}
+			if len(failed) > 0 {
+				log.Printf("WS: %d client(s) removed due to full send buffer, total=%d", len(failed), len(h.clients))
+			}
 		}
 	}
 }
@@ -79,6 +82,7 @@ func (c *Client) writePump() {
 	defer c.conn.Close()
 	for message := range c.send {
 		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			log.Printf("WS: write error: %v", err)
 			return
 		}
 	}
@@ -92,6 +96,7 @@ func (c *Client) readPump(h *Hub) {
 		c.conn.Close()
 	}()
 	for {
+		// 当前版本不处理客户端上行消息，仅消费数据以维持心跳并检测断线
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
 			return
