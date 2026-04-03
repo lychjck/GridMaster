@@ -32,7 +32,11 @@ venv/
 *.db-wal
 data/*.db
 
-scripts/deploy.sh
+# Logs
+*.log
+
+# Cert archives
+scripts/yinglian.site_nginx.zip
 
 backend/main
 backend/wangge-backend
